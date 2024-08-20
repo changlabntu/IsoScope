@@ -1,0 +1,44 @@
+DshareZngf48mc:
+  prj: "/IsoLesion/DshareZngf48mc/"
+  epoch: 200
+  to_upsample: false
+
+original:
+  prj: "/IsoScopeXX/cyc0lb1skip4ndf32/"
+  epoch: 320
+
+redo:  # BEST
+  prj: "/IsoScopeXXoai/redo/"
+  epoch: 500
+
+nomc:
+  prj: "/IsoScopeXX/cyc0lb1skip4ndf32nomc/"
+  epoch: 300
+
+noup:
+  prj: "/IsoScopeXXnoup/0/"
+  epoch: 500
+  to_upsample: false
+
+unet:  # new baseline
+  prj: "/IsoScopeXX/unet/redounet/"
+  epoch: 100
+
+unetcut:
+  prj: "/IsoScopeXX/unet/cut0001/"
+  epoch: 100
+
+unetnorm:
+  prj: "/IsoScopeXX/unet/redoanorm/"
+  epoch: 100
+  raw_trd: [-1, 1]
+  raw_source: "anorm2d/"
+
+noupE:
+  prj: "/IsoScopeXXnoup/E2a/"
+  epoch: 400
+  to_upsample: false
+
+new:
+  prj: "/IsoScopeXX/unet/netnomc/"
+  epoch: 100
