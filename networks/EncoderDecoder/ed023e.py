@@ -35,23 +35,39 @@ def crop_and_concat(upsampled, bypass, crop=False):
     return torch.cat((upsampled, bypass), 1)
 
 
-def conv2d_block(in_channels, out_channels, kernel=3, stride=1, padding=1, activation=ACTIVATION):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel, stride=stride, padding=padding),
-        activation(),
-    )
+
+def get_normalization(out_channels, method):
+    if method == 'batch':
+        return nn.BatchNorm2d(out_channels)
+    elif method == 'instance':
+        return nn.InstanceNorm2d(out_channels)
+    elif method == 'group':
+        return nn.GroupNorm(32, out_channels)
+    elif method == 'none':
+        return nn.Identity()
+
+def get_normalization_3d(out_channels, method):
+    if method == 'batch':
+        return nn.BatchNorm3d(out_channels)
+    elif method == 'instance':
+        return nn.InstanceNorm3d(out_channels)
+    elif method == 'group':
+        return nn.GroupNorm(32, out_channels)
+    elif method == 'none':
+        return nn.Identity()
 
 
-def conv2d_bn_block(in_channels, out_channels, kernel=3, momentum=0.01, activation=ACTIVATION):
+def conv2d_bn_block(in_channels, out_channels, kernel=3, momentum=0.01, activation=ACTIVATION, norm='batch'):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, kernel, padding=1),
-        nn.BatchNorm2d(out_channels, momentum=momentum),
+        #nn.BatchNorm2d(out_channels, momentum=momentum),
+        get_normalization(out_channels, method=norm),
         activation(),
     )
 
 
 def deconv2d_bn_block(in_channels, out_channels, use_upsample=True, kernel=4, stride=2, padding=1, momentum=0.01,
-                      activation=ACTIVATION):
+                      activation=ACTIVATION, norm='batch'):
     if use_upsample:
         up = nn.Sequential(
             nn.Upsample(scale_factor=2),
@@ -61,28 +77,23 @@ def deconv2d_bn_block(in_channels, out_channels, use_upsample=True, kernel=4, st
         up = nn.ConvTranspose2d(in_channels, out_channels, kernel, stride=stride, padding=padding)
     return nn.Sequential(
         up,
-        nn.BatchNorm2d(out_channels, momentum=momentum),
+        #nn.BatchNorm2d(out_channels, momentum=momentum),
+        get_normalization(out_channels, method=norm),
         activation(),
     )
 
 
-def conv3d_block(in_channels, out_channels, kernel=3, stride=1, padding=1, activation=ACTIVATION):
-    return nn.Sequential(
-        nn.Conv3d(in_channels, out_channels, kernel, stride=stride, padding=padding),
-        activation(),
-    )
-
-
-def conv3d_bn_block(in_channels, out_channels, kernel=3, momentum=0.01, activation=ACTIVATION):
+def conv3d_bn_block(in_channels, out_channels, kernel=3, momentum=0.01, activation=ACTIVATION, norm='batch'):
     return nn.Sequential(
         nn.Conv3d(in_channels, out_channels, kernel, padding=1),
-        nn.BatchNorm3d(out_channels, momentum=momentum),
+        #nn.BatchNorm3d(out_channels, momentum=momentum),
+        get_normalization_3d(out_channels, method=norm),
         activation(),
     )
 
 
 def deconv3d_bn_block(in_channels, out_channels, use_upsample=True, kernel=4, stride=2, padding=1, momentum=0.01,
-                      activation=ACTIVATION):
+                      activation=ACTIVATION, norm='batch'):
     if use_upsample:
         up = nn.Sequential(
             nn.Upsample(scale_factor=2),
@@ -92,16 +103,9 @@ def deconv3d_bn_block(in_channels, out_channels, use_upsample=True, kernel=4, st
         up = nn.ConvTranspose3d(in_channels, out_channels, kernel, stride=stride, padding=padding)
     return nn.Sequential(
         up,
-        nn.BatchNorm3d(out_channels, momentum=momentum),
+        #nn.BatchNorm3d(out_channels, momentum=momentum),
+        get_normalization_3d(out_channels, method=norm),
         activation(),
-    )
-
-
-def dense_layer_bn(in_dim, out_dim, momentum=0.01, activation=ACTIVATION):
-    return nn.Sequential(
-        nn.Linear(in_dim, out_dim),
-        nn.BatchNorm1d(out_dim, momentum=momentum),
-        activation()
     )
 
 
@@ -112,8 +116,8 @@ class Generator(nn.Module):
         if norm_type == 'batch':
             batch_norm = True
 
-        conv2_block = conv2d_bn_block if batch_norm else conv2d_block
-        conv3_block = conv3d_bn_block if batch_norm else conv3d_block
+        conv2_block = conv2d_bn_block
+        conv3_block = conv3d_bn_block
 
         max2_pool = nn.MaxPool2d(2)
         self.max3_pool = nn.MaxPool3d(2)
@@ -125,52 +129,52 @@ class Generator(nn.Module):
             dropout = 0.0
 
         self.down0 = nn.Sequential(
-            conv2_block(n_channels, nf, activation=act),
-            conv2_block(nf, nf, activation=act)
+            conv2_block(n_channels, nf, activation=act, norm='none'),
+            conv2_block(nf, nf, activation=act, norm=norm_type)
         )
         self.down1 = nn.Sequential(
             #max2_pool,
-            conv2_block(nf, 2 * nf, activation=act),
-            conv2_block(2 * nf, 2 * nf, activation=act),
+            conv2_block(nf, 2 * nf, activation=act, norm=norm_type),
+            conv2_block(2 * nf, 2 * nf, activation=act, norm=norm_type),
         )
         self.down2 = nn.Sequential(
             #max2_pool,
-            conv2_block(2 * nf, 4 * nf, activation=act),
+            conv2_block(2 * nf, 4 * nf, activation=act, norm=norm_type),
             nn.Dropout(p=dropout, inplace=False),
-            conv2_block(4 * nf, 4 * nf, activation=act),
+            conv2_block(4 * nf, 4 * nf, activation=act, norm=norm_type),
 
         )
         self.down3 = nn.Sequential(
             #max2_pool,
-            conv2_block(4 * nf, 8 * nf, activation=act),
+            conv2_block(4 * nf, 8 * nf, activation=act, norm=norm_type),
             nn.Dropout(p=dropout, inplace=False),
-            conv2_block(8 * nf, 8 * nf, activation=act),
+            conv2_block(8 * nf, 8 * nf, activation=act, norm=norm_type),
         )
 
-        self.up3 = deconv3d_bn_block(8 * nf, 4 * nf, activation=act)
+        self.up3 = deconv3d_bn_block(8 * nf, 4 * nf, activation=act, norm=norm_type)
 
         self.conv5 = nn.Sequential(
-            conv3_block(4 * nf, 4 * nf, activation=act),  # 8
+            conv3_block(4 * nf, 4 * nf, activation=act, norm=norm_type),  # 8
             nn.Dropout(p=dropout, inplace=False),
-            conv3_block(4 * nf, 4 * nf, activation=act),
+            conv3_block(4 * nf, 4 * nf, activation=act, norm=norm_type),
         )
-        self.up2 = deconv3d_bn_block(4 * nf, 2 * nf, activation=act)
+        self.up2 = deconv3d_bn_block(4 * nf, 2 * nf, activation=act, norm=norm_type)
         self.conv6 = nn.Sequential(
-            conv3_block(2 * nf, 2 * nf, activation=act),
+            conv3_block(2 * nf, 2 * nf, activation=act, norm=norm_type),
             nn.Dropout(p=dropout, inplace=False),
-            conv3_block(2 * nf, 2 * nf, activation=act),
+            conv3_block(2 * nf, 2 * nf, activation=act, norm=norm_type),
         )
 
-        self.up1 = deconv3d_bn_block(2 * nf, nf, activation=act)
+        self.up1 = deconv3d_bn_block(2 * nf, nf, activation=act, norm=norm_type)
 
         final_layer = get_activation(final)
 
         self.conv7_k = nn.Sequential(
-            conv3_block(nf, out_channels, activation=final_layer),
+            conv3_block(nf, out_channels, activation=final_layer, norm='none'),
         )
 
         self.conv7_g = nn.Sequential(
-            conv3_block(nf, out_channels, activation=final_layer),
+            conv3_block(nf, out_channels, activation=final_layer, norm='none'),
         )
 
         #if NoTanh:
@@ -191,7 +195,6 @@ class Generator(nn.Module):
                     x = self.max3_pool(x)
                     x = x.squeeze(0).permute(3, 0, 1, 2)  # (Z, C, X, Y)
                 x = self.encoder[i](x)
-                #print(x.shape)
                 feat.append(x.permute(1, 2, 3, 0).unsqueeze(0))
             if method == 'encode':
                 return feat
@@ -208,7 +211,7 @@ class Generator(nn.Module):
 
 
 if __name__ == '__main__':
-    g = Generator(n_channels=1, norm_type='batch', final='tanh')
+    g = Generator(n_channels=1, norm_type='group', final='tanh')
     #from torchsummary import summary
     #from utils.data_utils import print_num_of_parameters
     #print_num_of_parameters(g)

@@ -23,7 +23,7 @@ def get_one_out(x0, model):
     if len(x0) > 1:
         out_all = model(torch.cat([x0[0].cuda(), x0[1].cuda()], 1))['out0'].cpu().detach()
     else:
-        out_all = model(x0)['out0'].cpu().detach()
+        out_all = model(x0[0])['out0'].cpu().detach()
 
     # no gpu
     #else:
@@ -185,16 +185,20 @@ def get_data(kwargs):
     image_path = kwargs.get("image_path")  # if image path is a file
     image_list_path = kwargs.get("image_list_path")  # if image path is a directory
 
+    x0 = []
     if image_path:
-        x0 = tiff.imread(image_path)
+        for i in range(len(image_path)):
+            x0.append(tiff.imread(image_path[i]))
+
     elif image_list_path:
-        x_list = sorted(glob.glob(image_list_path))
-        if not x_list:
-            raise ValueError(f"No images found at {image_list_path}")
-        x0 = tiff.imread(x_list[kwargs.get("image_list_index")])
+        for i in range(len(image_list_path)):
+            x_list = sorted(glob.glob(image_list_path[i]))
+            if not x_list:
+                raise ValueError(f"No images found at {image_list_path[i]}")
+            x0.append(tiff.imread(x_list[kwargs.get("image_list_index")]))
     else:
         raise ValueError("No valid image path provided.")
-    return list(x0)
+    return x0
 
 
 

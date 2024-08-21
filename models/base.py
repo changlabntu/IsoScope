@@ -10,19 +10,8 @@ import time, os
 import pytorch_lightning as pl
 from utils.data_utils import *
 from pytorch_lightning.utilities import rank_zero_only
-from models.helper import NeptuneHelper
+import yaml
 
-"""
-change log
-
-base: generation > generation(batch), self.batch > batch
-reshape3d: base > models.helper
-labels: models > models.helper_oai
-remove coeff from adv and L1 loss
-remove add_loss_adv_classify3d
-swap_by_labels > oai_helper
-auc > logger_helper
-"""
 
 class Namespace:
     def __init__(self, **kwargs):
@@ -136,8 +125,6 @@ class BaseModel(pl.LightningModule):
         self.hparams.update(vars(self.hparams))   # updated hparams to be logged in tensorboard
         #self.train_loader.dataset.shuffle_images()  # !!! shuffle again just to make sure
         #self.train_loader.dataset.shuffle_images()  # !!! shuffle again just to make sure
-
-        self.log_helper = NeptuneHelper()
 
         self.all_label = []
         self.all_out = []
@@ -283,7 +270,7 @@ class BaseModel(pl.LightningModule):
         elif (self.hparams.netG).startswith('ldm'):  # ldm
             print('ldm generator: ' + self.hparams.netG)
 
-            with open('networks/ldm/' + self.hparams.netG + 'yaml', "r") as f:
+            with open('networks/ldm/' + self.hparams.netG + '.yaml', "r") as f:
                 config = yaml.load(f, Loader=yaml.Loader)
 
             ddconfig = config['model']['params']["ddconfig"]

@@ -1,0 +1,3 @@
+# Paths
+export LOGS='home/gary/workspace/logs/'
+export DATASET='home/gary/workspace/Data/'

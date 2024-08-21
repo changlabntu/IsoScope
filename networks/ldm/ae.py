@@ -437,6 +437,7 @@ class AE(nn.Module):
 
     def forward(self, x, method=None):
         if method != 'decode':
+            x = x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
             x = self.encoder(x)
             x = x.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
             if method == 'encode':

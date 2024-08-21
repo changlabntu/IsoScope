@@ -8,11 +8,11 @@ prj_dirs = sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/*/check
 prj_dirs = [x.split('womac4')[1].split('checkpoints')[0] for x in prj_dirs]
 
 #prj_dirs = ['/IsoScopeXX/unet/netnomc/']
-prj_dirs = ['/IsoScopeXX/unetb/redounetnorotate/']
+prj_dirs = ['/IsoScopeXXnoup/aex2/']
 epoch_num = [100]#range(60, 401, 20)
 irange = "0,5"
-eval = True
-to_upsample = True
+eval = False
+to_upsample = False
 suffix = "a3d/"
 
 

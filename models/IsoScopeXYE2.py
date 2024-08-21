@@ -76,8 +76,10 @@ class GAN(BaseModel):
     def __init__(self, hparams, train_loader, eval_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
+        self.hparams.netG = 'ed023dE'  # 16 > 128
+        self.hparams.final = 'tanh'
         self.net_g, self.net_d = self.set_networks()
-        self.hparams.netG = 'ed023e'   # 128 > 128
+        self.hparams.netG = 'ed023d'  # 128 > 128
         self.hparams.final = 'tanh'
         self.net_gback, self.net_dzy = self.set_networks()
         self.net_dzx = copy.deepcopy(self.net_dzy)
@@ -91,10 +93,7 @@ class GAN(BaseModel):
         # Finally, initialize the optimizers and scheduler
         self.configure_optimizers()
 
-        if self.hparams.cropz > 0:
-            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropz * hparams.uprate), mode='trilinear')
-        else:
-            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, 32 * hparams.uprate), mode='trilinear')
+        self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
 
         # CUT NCE
         if not self.hparams.nocut:
@@ -120,7 +119,6 @@ class GAN(BaseModel):
         parser = parent_parser.add_argument_group("LitModel")
         # coefficient for the identify loss
         parser.add_argument("--lambI", type=int, default=0.5)
-        parser.add_argument("--uprate", type=int, default=4)
         parser.add_argument("--skipl1", type=int, default=1)
         parser.add_argument("--nocyc", action='store_true')
         parser.add_argument("--nocut", action='store_true')
@@ -144,23 +142,18 @@ class GAN(BaseModel):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
             batch['img'][0] = batch['img'][0][:, :, :, :, z_init:z_init + self.hparams.cropz]
-        #batch['img'][1] = batch['img'][1][:, :, :, :, z_init:z_init + self.hparams.cropz]
 
         self.oriX = batch['img'][0]  # (B, C, X, Y, Z) # original
-        #self.oriY = batch['img'][1]  # (B, C, X, Y, Z) # original
-
-        self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
-        #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
 
         self.goutz = self.net_g(self.oriX, method='encode')
-        #print(self.goutz[-1].shape)
         self.XupX = self.net_g(self.goutz, method='decode')['out0']
+        self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
 
         if not self.hparams.nocyc:
             self.XupXback = self.net_gback(self.XupX)['out0']
 
-    def get_xy_plane(self, x):  # (B, C, X, Y, Z)
-        return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]  # (Z, C, X, Y, B)
+    def get_xy_plane(self, x):
+        return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]
 
     def adv_loss_six_way(self, x, net_d, truth):
         loss = 0
@@ -201,8 +194,8 @@ class GAN(BaseModel):
         loss_dict = {}
 
         axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.hparams.skipl1],
+                                   b=self.Xup[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
 
         loss_dict['axx'] = axx
         loss_g += axx
@@ -263,4 +256,4 @@ class GAN(BaseModel):
 
 
 # USAGE
-# python train.py --jsn cyc_imorphics --prj IsoScope0/0 --models IsoScope0 --cropz 16 --cropsize 128 --netG ed023d --env t09 --adv 1 --rotate --ngf 64 --direction xyori --nm 11 --dataset longdent
+# python train.py --jsn cyc_imorphics --prj IsoScopeXY/ngf32lb10 --models IsoScopeXY --cropz 20 --cropsize 128 --env runpod --adv 1 --rotate --ngf 32 --direction xyori --nm 00 --netG ed023d --dataset Fly0B --n_epochs 6000 --lr_policy cosine --mc --lamb 10 --skipl1 4
