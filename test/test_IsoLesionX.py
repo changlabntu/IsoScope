@@ -10,17 +10,17 @@ import yaml
 
 def old_function():
     if 0:
-        reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/',
+        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
                                        subjects=sorted(glob.glob(root + 'original/a2d/' + '*'))[:],
                                        suffix='a2d/', padding=False, upsample=8, trd=(None, 800))
 
     if 0:
         source = root + 'original/addpm2d0506/'
-        IsoLesion_interpolate(destination=root + prj_name + 'addpm3d/',
+        IsoLesion_interpolate(destination=root + our_dir + 'addpm3d/',
                               subjects=sorted(glob.glob(source + '*'))[:],
                               net=net, to_upsample=to_upsample, padding=False, trd=(None, 800))
-        reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + prj_name + 'addpm3d/' + '*'))[:],
+        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                       subjects=sorted(glob.glob(root + our_dir + 'addpm3d/' + '*'))[:],
                                        suffix='addpm3d/', padding=False, trd=(-1, 1))
 
     #####################
@@ -30,28 +30,28 @@ def old_function():
         x_list = sorted(glob.glob(root + 'original/a2d/*'))
         y_list = sorted(glob.glob(root + 'original/addpm2d0506/*'))
         destination = 'difference2d/'
-        os.makedirs(root + prj_name + destination, exist_ok=True)
+        os.makedirs(root + our_dir + destination, exist_ok=True)
         calculate_difference(x_list, y_list, destination=destination)
     if 0:
-        x_list = sorted(glob.glob(root + prj_name + 'a3d/*'))
-        y_list = sorted(glob.glob(root + prj_name + 'addpm3d/*'))
-        mask_list = sorted(glob.glob(root + prj_name + 'difference2d/*'))
+        x_list = sorted(glob.glob(root + our_dir + 'a3d/*'))
+        y_list = sorted(glob.glob(root + our_dir + 'addpm3d/*'))
+        mask_list = sorted(glob.glob(root + our_dir + 'difference2d/*'))
         destination = 'difference3d/'
-        os.makedirs(root + prj_name + destination, exist_ok=True)
+        os.makedirs(root + our_dir + destination, exist_ok=True)
         calculate_difference(x_list, y_list, destination=destination, mask_list=mask_list)
 
     if 0:
-        #reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/',
-        #                               subjects=sorted(glob.glob(root + prj_name + 'difference2d/' + '*'))[:],
+        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+        #                               subjects=sorted(glob.glob(root + our_dir + 'difference2d/' + '*'))[:],
         #                               suffix='difference2d/', upsample=8, trd=None)
-        reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + prj_name + 'difference3d/' + '*'))[:],
+        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                       subjects=sorted(glob.glob(root + our_dir + 'difference3d/' + '*'))[:],
                                        suffix='difference3d/', trd=None)
-        #reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/', suffix='a2d/', upsample=8)
-        #reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/', suffix='a3d/')
+        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='a2d/', upsample=8)
+        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='a3d/')
 
-        #reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/', suffix='addpm2d/', upsample=8)
-        #reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/', suffix='addpm3d/')
+        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='addpm2d/', upsample=8)
+        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='addpm3d/')
 
     if 0:
         #seg = torch.load('/home/ghc/Dropbox/TheSource/scripts/ContrastiveDiffusion/submodels/atten_0706.pth').eval()
@@ -170,8 +170,8 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
 
             if z_pad:
                 # random shiftting
-                shift_L = np.random.randint(0, 8)  # z-direction random padding
-                shift_R = 8 - shift_L
+                shift_L = np.random.randint(0, 16)  # z-direction random padding
+                shift_R = 16 - shift_L
                 shiftL = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_L))
                 shiftR = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_R))
                 x0pad = torch.cat((shiftL, x0, shiftR), 4)
@@ -250,7 +250,7 @@ def calculate_difference(x_list, y_list, destination, mask_list=None):
             difference = np.multiply(difference, m)
 
         difference = (difference * 255).astype(np.uint8)
-        tiff.imwrite(root + prj_name + destination + x_list[i].split('/')[-1], difference)
+        tiff.imwrite(root + our_dir + destination + x_list[i].split('/')[-1], difference)
 
 
 def save_a_to_2d(source, subjects, destination):
@@ -395,6 +395,7 @@ if __name__ == "__main__":
             parser.add_argument('--irange', type=lambda x: tuple(map(int, x.split(','))),
                                 default='0,5', help='testing subject range')
             parser.add_argument('--suffix', type=str, default='a3d/')
+            parser.add_argument('--out_dir', type=str, default='test/')
 
             return parser.parse_args(args)
 
@@ -425,15 +426,15 @@ if __name__ == "__main__":
 
     # output root
     root = '/media/ExtHDD01/oai_diffusion_interpolated/'
-    prj_name = 'test/'
-    os.makedirs(root + prj_name, exist_ok=True)
+    our_dir = args.out_dir
+    os.makedirs(root + our_dir, exist_ok=True)
 
     source = '/media/ExtHDD01/oai_diffusion_interpolated/original/' + args.raw_source
-    IsoLesion_interpolate(destination=root + prj_name + 'a3d/',
+    IsoLesion_interpolate(destination=root + our_dir + 'a3d/',
                           subjects=sorted(glob.glob(source + '*'))[args.irange[0]:args.irange[1]],
                           net=net, to_upsample=args.to_upsample, mirror_padding=args.mirror_padding,
                           trd=args.raw_trd, z_pad=args.z_pad)
-    reslice_3d_to_2d_for_visualize(destination=root + prj_name + 'expanded3d/',
-                                   subjects=sorted(glob.glob(root + prj_name + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
+    reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                   subjects=sorted(glob.glob(root + our_dir + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
                                    # subjects=sorted(glob.glob(root + 'redo500/' + 'a3d/' + '*'))[:],
                                    suffix=args.suffix, fill_blank=False, trd=(-1, 1))

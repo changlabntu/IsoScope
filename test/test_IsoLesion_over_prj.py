@@ -7,14 +7,25 @@ import pandas as pd
 prj_dirs = sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/*/checkpoints/net_g_model_epoch_100.pth'))[::-1]
 prj_dirs = [x.split('womac4')[1].split('checkpoints')[0] for x in prj_dirs]
 
-#prj_dirs = ['/IsoScopeXX/unet/netnomc/']
-prj_dirs = ['/IsoScopeXXnoup/aex2/']
-epoch_num = [100]#range(60, 401, 20)
-irange = "0,5"
-eval = False
-to_upsample = False
-suffix = "a3d/"
+if 0:
+    prj_dirs = ['/IsoScopeXX/unet/redounet/']
+    epoch_num = [100]
+    to_upsample = True
+    eval = False
+    mirror_padding = 0
+    z_pad = True
+    num_mc = 20
+else:
+    prj_dirs = ['/IsoScopeXXldm/aex2ed023e/']
+    epoch_num = [200]
+    to_upsample = False
+    eval = False
+    mirror_padding = 0
+    z_pad = True
+    num_mc = 10
 
+irange = "0,1"
+suffix = "a3d/"
 
 # Name of your script in the test folder
 script_name = "test_IsoLesionX.py"
@@ -26,7 +37,8 @@ for prj in prj_dirs:
     # Construct the command
         command = [sys.executable, "-W", "ignore", "-m", f"test.{script_name[:-3]}",
                    "--prj", prj, "--epoch", str(epoch), "--irange", irange, "--eval", str(eval),
-                   "--to_upsample", str(to_upsample), "--suffix", suffix + str(epoch).zfill(3)]
+                   "--to_upsample", str(to_upsample), "--suffix", suffix, "--mirror_padding", str(mirror_padding),
+                   "--z_pad", str(z_pad), "--num_mc", str(num_mc)]
 
         # Run the command
         try:

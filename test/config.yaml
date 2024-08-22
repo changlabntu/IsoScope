@@ -115,8 +115,8 @@ Dayu1:
 
 DPM4X:
   dataset: "DPM4X"
-  prj: "/IsoScopeXYtc/noskipl1/"
-  epoch: 3000
+  prj: "/IsoScopeXYtc/unetx2/"
+  epoch: 1000
   upsample_params:
     size: [256, 128, 256]
   patch_range:

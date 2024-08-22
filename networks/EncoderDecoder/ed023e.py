@@ -133,19 +133,16 @@ class Generator(nn.Module):
             conv2_block(nf, nf, activation=act, norm=norm_type)
         )
         self.down1 = nn.Sequential(
-            #max2_pool,
             conv2_block(nf, 2 * nf, activation=act, norm=norm_type),
             conv2_block(2 * nf, 2 * nf, activation=act, norm=norm_type),
         )
         self.down2 = nn.Sequential(
-            #max2_pool,
             conv2_block(2 * nf, 4 * nf, activation=act, norm=norm_type),
             nn.Dropout(p=dropout, inplace=False),
             conv2_block(4 * nf, 4 * nf, activation=act, norm=norm_type),
 
         )
         self.down3 = nn.Sequential(
-            #max2_pool,
             conv2_block(4 * nf, 8 * nf, activation=act, norm=norm_type),
             nn.Dropout(p=dropout, inplace=False),
             conv2_block(8 * nf, 8 * nf, activation=act, norm=norm_type),
@@ -176,10 +173,6 @@ class Generator(nn.Module):
         self.conv7_g = nn.Sequential(
             conv3_block(nf, out_channels, activation=final_layer, norm='none'),
         )
-
-        #if NoTanh:
-        #    self.conv7_k[-1] = self.conv7_k[-1][:-1]
-        #    self.conv7_g[-1] = self.conv7_g[-1][:-1]
 
         self.encoder = nn.Sequential(self.down0, self.down1, self.down2, self.down3)
         self.decoder = nn.Sequential(self.up3, self.conv5, self.up2, self.conv6, self.up1)

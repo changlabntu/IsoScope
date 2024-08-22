@@ -21,7 +21,7 @@ def get_one_out(x0, model):
     #if gpu:
 
     if len(x0) > 1:
-        out_all = model(torch.cat([x0[0].cuda(), x0[1].cuda()], 1))['out0'].cpu().detach()
+        out_all = model(torch.cat([x0[0].cuda(), x0[1].cuda()], 1))['out1'].cpu().detach()
     else:
         out_all = model(x0[0])['out0'].cpu().detach()
 
@@ -54,7 +54,7 @@ def test_IsoScope(x0, model, **kwargs):
         out = get_one_out(patch, model)
         out = np.transpose(out, (2, 0, 1))
         if gpu:
-            patch = patch[0].cpu().detach()
+            patch = patch[1].cpu().detach()
         print('Time:', time.time() - tini)
 
         out_all.append(out)

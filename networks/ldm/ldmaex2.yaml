@@ -23,7 +23,7 @@ model:
       attn_resolutions: [ ]
       dropout: 0.0
       branch_point: "mid"
-      decoder: networks.ldm.ed023d.Generator
+      decoder: networks.EncoderDecoder.ed023e.Generator
 
 data:
   target: main.DataModuleFromConfig

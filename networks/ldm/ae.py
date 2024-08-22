@@ -292,6 +292,9 @@ class Encoder(nn.Module):
                 hs.append(self.down[i_level].downsample(hs[-1]))
 
         # middle
+        #for x in hs:
+        #    print(x.shape)
+
         h = hs[-1]
         if self.branch_point == 'before':
             return h
@@ -470,7 +473,7 @@ if __name__ == "__main__":
     Generator = getattr(getattr(__import__('networks.ldm.' + 'ae'), 'ldm'), 'ae').AE
     net = Generator(ddconfig)
 
-    z = net(torch.rand(16, 1, 128, 128), method='encode')
+    z = net(torch.rand(1, 1, 64, 64, 8), method='encode')
     print(z.shape)
     out = net(z, method='decode')['out0']
     print(out.shape)
