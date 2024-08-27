@@ -92,11 +92,11 @@ def conv3d_bn_block(in_channels, out_channels, kernel=3, momentum=0.01, activati
     )
 
 
-def deconv3d_bn_block(in_channels, out_channels, use_upsample=True, kernel=4, stride=2, padding=1, momentum=0.01,
+def deconv3d_bn_block(in_channels, out_channels, use_upsample=(2, 2, 2), kernel=4, stride=2, padding=1, momentum=0.01,
                       activation=ACTIVATION, norm='batch'):
     if use_upsample:
         up = nn.Sequential(
-            nn.Upsample(scale_factor=2),
+            nn.Upsample(scale_factor=use_upsample),
             nn.Conv3d(in_channels, out_channels, 3, stride=1, padding=1)
         )
     else:

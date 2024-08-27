@@ -168,6 +168,10 @@ class BaseModel(pl.LightningModule):
         l1 = self.criterionL1(a, b)
         return l1
 
+    def add_loss_l2(self, a, b):
+        l1 = self.criterionL2(a, b)
+        return l1
+
     def save_auc_csv(self, auc, epoch):
         auc = auc.cpu().numpy()
         auc = np.insert(auc, 0, epoch)

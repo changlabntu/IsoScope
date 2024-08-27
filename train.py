@@ -160,7 +160,7 @@ if __name__ == '__main__':
                          max_epochs=args.n_epochs,  # progress_bar_refresh_rate=20,
                          logger=logger,
                          enable_checkpointing=True, log_every_n_steps=100,
-                         check_val_every_n_epoch=1)
+                         check_val_every_n_epoch=1, accumulate_grad_batches=2)
     if eval_loader is not None:
         trainer.fit(net, train_loader, eval_loader)
     else:

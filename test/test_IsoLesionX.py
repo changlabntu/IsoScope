@@ -345,6 +345,7 @@ def get_model():
     if args.epoch == 'last':
         last_epoch = \
         sorted(glob.glob('/media/ExtHDD01/logs/womac4' + args.prj + 'checkpoints/net_g_model_epoch_*.pth'))[-1]
+        print(last_epoch)
         net = torch.load(last_epoch, map_location=torch.device('cpu'))
     else:
         model_name = '/media/ExtHDD01/logs/womac4' + args.prj + 'checkpoints/net_g_model_epoch_' + str(

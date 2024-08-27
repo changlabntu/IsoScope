@@ -7,24 +7,35 @@ import pandas as pd
 prj_dirs = sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/*/checkpoints/net_g_model_epoch_100.pth'))[::-1]
 prj_dirs = [x.split('womac4')[1].split('checkpoints')[0] for x in prj_dirs]
 
-if 0:
-    prj_dirs = ['/IsoScopeXX/unet/redounet/']
-    epoch_num = [100]
-    to_upsample = True
-    eval = False
-    mirror_padding = 0
-    z_pad = True
-    num_mc = 20
-else:
-    prj_dirs = ['/IsoScopeXXldm/aex2ed023e/']
-    epoch_num = [200]
-    to_upsample = False
-    eval = False
-    mirror_padding = 0
-    z_pad = True
-    num_mc = 10
+prj_dirs = prj_dirs[-1:]
 
-irange = "0,1"
+epoch_num = ['last']
+to_upsample = True
+eval = True
+mirror_padding = 0
+z_pad = True
+num_mc = 1
+
+if 0:
+    #prj_dirs = ['/IsoScopeXX/cyc0lb1skip4ndf32nomc/']
+    #epoch_num = [300]
+    prj_dirs = ['/IsoScopeXX/unet/redounetlsgan/']
+    epoch_num = [500]
+    to_upsample = True
+    eval = True
+    mirror_padding = 0
+    z_pad = True
+    num_mc = 1
+elif 0:
+    prj_dirs = ['/IsoScopeXXldm/aex2ed023egroupnorm/']
+    epoch_num = [300]
+    to_upsample = False
+    eval = True
+    mirror_padding = 0
+    z_pad = True
+    num_mc = 1
+
+irange = "0,5"
 suffix = "a3d/"
 
 # Name of your script in the test folder
