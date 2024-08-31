@@ -104,6 +104,62 @@ class GAN(BaseModel):
     def get_last_layer(self):
         return self.decoder.conv_out.weight
 
+    def save_checkpoint(self, filepath):
+        # Combine all the state dicts into a single state dict
+        state_dict = {}
+
+        # Encoder
+        for k, v in self.encoder.state_dict().items():
+            state_dict[f'encoder.{k}'] = v
+
+        # Decoder
+        for k, v in self.decoder.state_dict().items():
+            state_dict[f'decoder.{k}'] = v
+
+        # Quant Conv
+        for k, v in self.quant_conv.state_dict().items():
+            state_dict[f'quant_conv.{k}'] = v
+
+        # Post Quant Conv
+        for k, v in self.post_quant_conv.state_dict().items():
+            state_dict[f'post_quant_conv.{k}'] = v
+
+        # Discriminator (if you want to include it)
+        for k, v in self.discriminator.state_dict().items():
+            state_dict[f'loss.discriminator.{k}'] = v
+
+        # Create the checkpoint dictionary
+        checkpoint = {
+            "state_dict": state_dict,
+            "global_step": self.global_step,
+            "optimizer_g": self.optimizer_g.state_dict(),
+            "optimizer_d": self.optimizer_d.state_dict(),
+        }
+
+        # Save additional hyperparameters if needed
+        if hasattr(self, 'hparams'):
+            checkpoint['hparams'] = self.hparams
+
+        torch.save(checkpoint, filepath)
+        print(f"Model saved to {filepath}")
+
+    @classmethod
+    def load_from_checkpoint(cls, filepath, train_loader=None, eval_loader=None, checkpoints=None):
+        checkpoint = torch.load(filepath, map_location=torch.device('cpu'))
+        hparams = checkpoint['hparams']
+
+        model = cls(hparams, train_loader, eval_loader, checkpoints)
+        model.encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        model.decoder.load_state_dict(checkpoint['decoder_state_dict'])
+        model.quant_conv.load_state_dict(checkpoint['quant_conv_state_dict'])
+        model.post_quant_conv.load_state_dict(checkpoint['post_quant_conv_state_dict'])
+        model.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        model.optimizer_g.load_state_dict(checkpoint['optimizer_g_state_dict'])
+        model.optimizer_d.load_state_dict(checkpoint['optimizer_d_state_dict'])
+        model.global_step = checkpoint['global_step']
+
+        print(f"Model loaded from {filepath}")
+        return model
 
 
 # USAGE

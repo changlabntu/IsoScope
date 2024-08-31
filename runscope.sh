@@ -1,0 +1,1 @@
+python train.py --jsn cyc_imorphics --prj IsoScopeXY/ngf32ndf32lb10skip2nocyc --models IsoScopeXY --cropz 128 --cropsize 128 --env a6k --adv 1 --rotate --ngf 32 --direction camb0 --nm 00 --netG ed023e --dataset aisr081424 --n_epochs 10000 --lr_policy cosine --mc --lamb 10 --skipl1 2 --nocyc --ndf 32 --epoch_save 100

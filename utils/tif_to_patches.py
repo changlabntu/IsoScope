@@ -184,7 +184,7 @@ if 0:
     #     destination='zyori8/',
     #     dh=(32, 512, 512), step=(32, 512, 512), permute=(1, 0, 2), trd=2000, norm='11', prefix='', ftr=-1)
 
-if 0:
+if 0: #LAST
     #root = '/workspace/Data/Fly0B/'
     root = '/media/ExtHDD01/Dataset/paired_images/Fly0B/'
     suffix = ''
@@ -195,8 +195,24 @@ if 0:
 
     tif_to_patches([npy],
                    destination=('temp/', ),
-                   dh=(32, 512, 512), step=(32, 512, 512), permute=None,
-                   trd=((0, 2000), ), norm=('11', ), prefix='', ftr=-100)
+                   dh=(32, 256, 256), step=(32, 256, 256), permute=None,
+                   trd=((0, 2000), ), norm=('11', ), prefix='', ftr=-0.5)
+
+
+if 1:
+    #root = '/workspace/Data/Fly0B/'
+    root = '/home/ubuntu/Data/Dataset/paired_images/aisr081424/'
+    suffix = ''
+    npy = tiff.imread(root + 'CamB0rescale' + '.tif')
+    print(npy.shape)
+    #main(source=['xyori' + suffix],
+    #     destination=['xyoriftr' + suffix],
+    #     dh=(32, 512, 512), step=(32, 512, 512), permute=None, trds=[2000], norm='11', prefix='', ftr=-1)
+
+    tif_to_patches([npy],
+                   destination=('temp/', ),
+                   dh=(256, 256, 256), step=(256, 256, 256), permute=None,
+                   trd=((0, 15000), ), norm=('11', ), prefix='', ftr=-2)
 
 if 0:
     root = '/workspace/Data/Fly0B/'

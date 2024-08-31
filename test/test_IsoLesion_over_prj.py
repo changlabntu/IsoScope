@@ -4,25 +4,26 @@ import sys
 from utils.calculate_kid import load_images_from_folder, calculate_metrics
 import pandas as pd
 
-prj_dirs = sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/*/checkpoints/net_g_model_epoch_100.pth'))[::-1]
-prj_dirs = [x.split('womac4')[1].split('checkpoints')[0] for x in prj_dirs]
-
-prj_dirs = prj_dirs[-1:]
-
-epoch_num = ['last']
-to_upsample = True
-eval = True
-mirror_padding = 0
-z_pad = True
-num_mc = 1
 
 if 0:
-    #prj_dirs = ['/IsoScopeXX/cyc0lb1skip4ndf32nomc/']
-    #epoch_num = [300]
-    prj_dirs = ['/IsoScopeXX/unet/redounetlsgan/']
-    epoch_num = [500]
+    prj_dirs = sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/*/checkpoints/net_g_model_epoch_100.pth'))[::-1]
+    prj_dirs = [x.split('womac4')[1].split('checkpoints')[0] for x in prj_dirs]
+
+    prj_dirs = prj_dirs[-1:]
+
+    epoch_num = ['last']
     to_upsample = True
     eval = True
+    mirror_padding = 0
+    z_pad = True
+    num_mc = 1
+elif 1:
+    #prj_dirs = ['/IsoScopeXX/cyc0lb1skip4ndf32nomc/']
+    #epoch_num = [300]
+    prj_dirs = ['/IsoScopeXX/unet/redounetgroup/']
+    epoch_num = [200]
+    to_upsample = True
+    eval = False
     mirror_padding = 0
     z_pad = True
     num_mc = 1
