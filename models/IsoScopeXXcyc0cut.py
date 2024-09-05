@@ -133,6 +133,9 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
+        #parser.add_argument('--l1scheme', type=str, default='Xup', help='what to use for L1, Xup or oriX')
+        parser.add_argument('--cycscheme', type=str, default='oriX', help='what to use for cyc adv, Xup or oriX')
+        parser.add_argument('--resample', action='store_true')
         return parent_parser
 
     def test_method(self, net_g, img):
@@ -151,6 +154,10 @@ class GAN(BaseModel):
 
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
         #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
+        if self.hparams.resample:
+            rand_init = np.random.randint(self.hparams.uprate)
+            self.Xup = self.oriX[:, :, :, :, rand_init::self.hparams.uprate]
+            self.Xup = self.upsample(self.oriX)
 
         self.goutz = self.net_g(self.Xup, method='encode')
         self.XupX = self.net_g(self.goutz, method='decode')['out0']
@@ -251,7 +258,10 @@ class GAN(BaseModel):
         # ADV dyy
         if not self.hparams.nocyc:
             dyy = self.adv_loss_six_way_y(self.XupXback, truth=False)
-            dy = self.adv_loss_six_way_y(self.oriX, truth=True)
+            if self.hparams.cycscheme == 'Xup':
+                dy = self.adv_loss_six_way_y(self.Xup, truth=True)
+            elif self.hparams.cycscheme == 'oriX':
+                dy = self.adv_loss_six_way_y(self.oriX, truth=True)
 
             loss_dict['dyy'] = dyy + dy
             loss_d += dyy + dy

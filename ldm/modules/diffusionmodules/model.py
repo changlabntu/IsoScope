@@ -448,6 +448,7 @@ class Encoder(nn.Module):
 
         # middle
         h = hs[-1]
+        hbranch = h
         #print(h.shape)
         h = self.mid.block_1(h, temb)
         #print(h.shape)
@@ -462,7 +463,7 @@ class Encoder(nn.Module):
         h = nonlinearity(h)
         h = self.conv_out(h)
         #print(h.shape)
-        return h
+        return h, hbranch
 
 
 class Decoder(nn.Module):

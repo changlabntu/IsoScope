@@ -20,11 +20,11 @@ if 0:
 elif 1:
     #prj_dirs = ['/IsoScopeXX/cyc0lb1skip4ndf32nomc/']
     #epoch_num = [300]
-    prj_dirs = ['/IsoScopeXX/unet/redounetgroup/']
-    epoch_num = [200]
+    prj_dirs = ['/IsoScopeXX/unet/redounet3d/']
+    epoch_num = [100]
     to_upsample = True
     eval = False
-    mirror_padding = 0
+    mirror_padding = 4
     z_pad = True
     num_mc = 1
 elif 0:

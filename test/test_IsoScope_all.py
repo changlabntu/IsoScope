@@ -43,8 +43,10 @@ def test_IsoScope(x0, model, **kwargs):
             kwargs['patch_range']['start_dim2']:kwargs['patch_range']['end_dim2']] for x in x0]
 
         # extra downsampling z
-        #patch = patch[:, :, ::4, :, :]
-        #patch = nn.Upsample(scale_factor=(0.25, 1, 1), mode='trilinear')(patch)
+        #patch[0] = patch[0][:, :, ::4, :, :]
+        #print(patch[0].shape)
+        #patch[0] = nn.Upsample(scale_factor=(0.125, 1, 1), mode='trilinear')(patch[0])
+        #patch[0] = nn.Upsample(scale_factor=(8, 1, 1), mode='trilinear')(patch[0])
 
         if gpu:
             patch = [x.cuda() for x in patch]
@@ -54,14 +56,14 @@ def test_IsoScope(x0, model, **kwargs):
         out = get_one_out(patch, model)
         out = np.transpose(out, (2, 0, 1))
         if gpu:
-            patch = patch[1].cpu().detach()
+            patch = patch[0].cpu().detach()
         print('Time:', time.time() - tini)
 
         out_all.append(out)
 
     out_all = np.stack(out_all, axis=3)
 
-    return out_all, patch.numpy()
+    return out_all, patch[0].numpy()
 
 
 def reverse_log(x):
@@ -77,7 +79,7 @@ def assemble_microscopy_volumne(kwargs, w, zrange, xrange, yrange, source):
             for iy in yrange:
                 x = tiff.imread(source + str(iz) + '_' + str(ix) + '_' + str(iy) + '.tif')
                 cropped = x[C:-C, :, C:-C]
-                cropped = np.multiply(cropped, w)
+                #cropped = np.multiply(cropped, w)
                 if len(one_row) > 0:
                     one_row[-1][:, :, -C:] = one_row[-1][:, :, -C:] + cropped[:, :, :C]
                     one_row.append(cropped[:, :, 64:])
@@ -286,7 +288,7 @@ def main_assemble_volume(x0, kwargs):
 
 
 if __name__ == '__main__':
-    option = "DPM4X"#"BraTSReg"#'Dayu1'
+    option = "aisr081424"#'Dayu1'
     kwargs = get_args(option=option, config_name='test/config.yaml')
     print(kwargs)
 
@@ -295,7 +297,7 @@ if __name__ == '__main__':
         gpu = False
     else:
         gpu = True
-    gpu = True
+    gpu = False
     eval = False
     expand = False
     tilt = False

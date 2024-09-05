@@ -161,8 +161,11 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
 
         if to_upsample:
             upsample = torch.nn.Upsample(size=(x0.shape[2], x0.shape[3], x0.shape[4] * 8), mode='trilinear')
+            rand_init = np.random.randint(8)
+            print('rand_init', rand_init)
             x0 = upsample(x0)
-
+            x0 = x0[:, :, :, :, rand_init::8]
+            x0 = upsample(x0)
 
         all = []
         for _ in range(args.num_mc):

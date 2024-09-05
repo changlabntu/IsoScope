@@ -18,10 +18,11 @@ Fly0B:
 
 BraTSReg:
   dataset: "BraTSReg"
-  trd: 1
+  trd: [1, ]
   #prj: "/IsoScopeXX/unet/0/"
+  #epoch: 1500
   prj: "/IsoScopeXX/t1normcrop/"
-  epoch: 1900
+  epoch: 1500
   #uprate: 4
   upsample_params:
     size: [128, 256, 256]
@@ -33,9 +34,11 @@ BraTSReg:
     start_dim2: null
     end_dim2: 256
   #image_list_path: "/media/ExtHDD01/Dataset/paired_images/BraTSReg/train/t1norm/*.tif"
-  image_list_path: "/media/ExtHDD01/Dataset/paired_images/BraTSReg/train/t1normcroptest/*.tif"
+  image_list_path: ["/media/ExtHDD01/Dataset/paired_images/BraTSReg/train/t1normcroptest/*.tif"]
   image_list_index: 0
-  norm_method: "11"
+  norm_method: ["11"]
+  exp_trd: [None, ]
+  exp_ftr: [None, ]
 
 womac4:
   dataset: "womac4"
@@ -80,6 +83,38 @@ weikun060524:
     end_dim2: 1408
   image_path: "/media/ExtHDD01/Dataset/paired_images/weikun060524/roiAx2.tif"
   norm_method: "01"
+
+aisr081424:
+  dataset: "aisr081424"
+  trd: [15000, ]
+  prj: "/IsoScopeXY/ngf32ndf32lb10skip2nocyc/"
+  epoch: 2000
+  upsample_params:
+    size: [384, 128, 512]
+  patch_range:
+    start_dim0: 0
+    end_dim0: 384
+    start_dim1: 896
+    end_dim1: 1024
+    start_dim2: 0
+    end_dim2: 512
+  image_path: ["/media/ExtHDD01/Dataset/paired_images/aisr081424/CamB0rescale.tif", ]
+  norm_method: ["11", ]
+  exp_trd: [ None, ]
+  exp_ftr: [ None, ]
+  assemble: False
+  assemble_params:
+    C: 64 # cropped pixels
+    dx_shape: [ 256, 128, 256 ] # inference size
+    sx_shape: [ 128, 128, 128 ] # step size
+    weight_shape: [ 128, 128, 128 ]
+    weight_method: "cross"
+    zrange_start: 0
+    zrange_end: 20
+    xrange_start: 0
+    xrange_end: 1
+    yrange_start: 0
+    yrange_end: 20
 
 Dayu1:
   dataset: "Dayu1"

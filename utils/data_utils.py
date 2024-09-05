@@ -3,6 +3,16 @@ import numpy as np
 from PIL import Image
 from skimage import data, io
 import matplotlib.pyplot as plt
+import json
+import argparse
+
+
+def read_json_to_args(json_file):
+    with open(json_file, 'r') as f:
+        args = json.load(f)
+    args = argparse.Namespace(**args)
+    return args
+
 
 def to_8bit(x):
     if type(x) == torch.Tensor:
