@@ -7,6 +7,10 @@ from utils.data_utils import imagesc
 import os, glob
 import yaml
 import argparse, json
+from utils.data_utils import read_json_to_args
+import numpy as np
+
+
 
 if 0:
     parser = get_args()
@@ -74,4 +78,54 @@ def test_womac4():
     recon, mu, logvar = vae.forward(x, use_posterior=True)
     imagesc(recon.squeeze().detach().numpy())
 
-test_womac4()
+#test_womac4()
+
+
+def test_Fly0B():
+    #prj ='/Fly0B/ae/ae0discstart0/'
+    #model_names = ['encoder', 'decoder', 'post_quant_conv', 'quant_conv']
+
+    prj = '/Fly0B/ae/iso0/'
+    model_names = ['encoder', 'decoder', 'net_g', 'post_quant_conv', 'quant_conv']
+    epoch = str(2000)
+
+    root = '/media/ExtHDD01/logs/' + prj
+    args = read_json_to_args(root + '0.json')
+
+    #args.ldmyaml = 'ldmaex2x2'
+
+    GAN = getattr(__import__('models.' + args.models), args.models).GAN
+    gan = GAN(args, train_loader=None, eval_loader=None, checkpoints=None)
+
+    gan = load_pth(gan, root=root, epoch=epoch, model_names=model_names)
+
+    img_list = sorted(glob.glob('/media/ExtHDD01/Dataset/paired_images/Fly0B/train/xyori0828/*'))
+    oriX = torch.from_numpy(np.stack([tiff.imread(y) for y in img_list[32:64]], 2)).unsqueeze(0).unsqueeze(1).float()
+
+    xx = oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
+    reconstructions, posterior, hbranch = gan.forward(xx[:32, :, :, :], sample_posterior=False)
+    # hbranch (1, 256, 8, 8)
+    hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
+    XupX = gan.net_g(hbranch, method='decode')['out0']
+
+    Xup = torch.nn.Upsample(size=(256, 256, 256), mode='trilinear')(xx.permute(1, 2, 3, 0).unsqueeze(0))
+
+    Xup = Xup.permute(3, 0, 1, 4, 2).squeeze().detach().numpy()
+    XupX = XupX.permute(3, 0, 1, 4, 2).squeeze().detach().numpy()
+
+    imagesc(Xup[200, :, :])
+    imagesc(XupX[200, :, :])
+
+    tiff.imwrite('Xup.tif', Xup)
+    tiff.imwrite('XupX.tif', XupX)
+
+def load_pth(gan, root, epoch, model_names):
+    for name in model_names:
+        setattr(gan, name, torch.load(root + 'checkpoints/' + name + '_model_epoch_' + epoch + '.pth', map_location=torch.device('cpu')))
+    return gan
+    #gan.encoder = torch.load(root + 'checkpoints/encoder_model_epoch_' + epoch + '.pth', map_location=torch.device('cpu'))
+    #gan.decoder = torch.load(root + 'checkpoints/decoder_model_epoch_' + epoch + '.pth', map_location=torch.device('cpu'))
+    #gan.quant_conv = torch.load(root + 'checkpoints/quant_conv_model_epoch_' + epoch + '.pth', map_location=torch.device('cpu'))
+    #gan.post_quant_conv = torch.load(root + 'checkpoints/post_quant_conv_model_epoch_' + epoch + '.pth', map_location=torch.device('cpu'))
+
+

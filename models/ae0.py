@@ -16,7 +16,7 @@ class GAN(BaseModel):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
         # Initialize encoder and decoder
-        with open('networks/ldm/ldmaex2.yaml', "r") as f:
+        with open('ldm/ldmaex2.yaml', "r") as f:
             config = yaml.load(f, Loader=yaml.Loader)
 
         ddconfig = config['model']['params']["ddconfig"]
@@ -52,7 +52,7 @@ class GAN(BaseModel):
         return parent_parser
 
     def encode(self, x):
-        h = self.encoder(x)
+        h, _ = self.encoder(x)
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
         return posterior

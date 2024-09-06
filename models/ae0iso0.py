@@ -9,7 +9,6 @@ from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 from ldm.util import instantiate_from_config
 import yaml
 import numpy as np
-from models.IsoScopeXY import adv_loss_six_way
 
 
 class GAN(BaseModel):
@@ -18,15 +17,17 @@ class GAN(BaseModel):
 
         # GAN Model
 
-        self.hparams.netG = 'ed023e'   # 128 > 128
-        self.hparams.final = 'tanh'
-        self.net_g, self.net_d = self.set_networks()
-
         # Initialize encoder and decoder
+        print('Reading yaml: ' + self.hparams.ldmyaml)
         with open('ldm/' + self.hparams.ldmyaml + '.yaml', "r") as f:
             config = yaml.load(f, Loader=yaml.Loader)
 
         ddconfig = config['model']['params']["ddconfig"]
+        print(ddconfig)
+
+        self.hparams.netG = ddconfig['interpolator']#'ed023e'   # 128 > 128
+        self.hparams.final = 'tanh'
+        self.net_g, self.net_d = self.set_networks()
 
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
@@ -50,6 +51,8 @@ class GAN(BaseModel):
         self.configure_optimizers()
 
         #self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
+        self.uprate = (hparams.cropsize // hparams.cropz)
+        print('uprate: ' + str(self.uprate))
 
         #lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         #if opt.scale_lr:
@@ -60,6 +63,7 @@ class GAN(BaseModel):
         parser = parent_parser.add_argument_group("AutoencoderKL")
         parser.add_argument("--embed_dim", type=int, default=4)
         parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
+        parser.add_argument("--skipl1", type=int, default=4)
         #parswr.add_argument("--ddconfig", type=str)
         return parent_parser
 
@@ -90,6 +94,43 @@ class GAN(BaseModel):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
+    def adv_loss_six_way(self, x, net_d, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
+                                       net_d=net_d, truth=truth)
+        loss = loss / 6
+        return loss
+
+    def adv_loss_six_way_y(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                        net_d=self.net_dzy, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                        net_d=self.net_dzy, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
+                                        net_d=self.net_dzx, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
+                                        net_d=self.net_dzx, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
+                                        net_d=self.net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
+                                        net_d=self.net_d, truth=truth)
+        loss = loss / 6
+        return loss
+
+    def get_xy_plane(self, x):
+        return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]
+
     def generation(self, batch):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
@@ -101,7 +142,7 @@ class GAN(BaseModel):
         # AE
         self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
         # hbranch (1, 256, 8, 8)
-        print(hbranch.shape)
+        #print(hbranch.shape)
         # IsoGAN
         hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
         self.XupX = self.net_g(hbranch, method='decode')['out0']
@@ -112,7 +153,7 @@ class GAN(BaseModel):
 
         axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
         loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.uprate * self.hparams.skipl1],
-                                   b=self.Xup[:, :, :, :, ::self.uprate * self.hparams.skipl1]) * self.hparams.lamb
+                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
 
         loss_dict['axx'] = axx
         loss_g += axx
@@ -120,7 +161,8 @@ class GAN(BaseModel):
         loss_g += loss_l1
 
         # ae
-        aeloss, log_dict_ae = self.loss(self.oriX, self.reconstructions, self.posterior, 0, self.global_step,
+        aeloss, log_dict_ae = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
+                                        self.reconstructions, self.posterior, 0, self.global_step,
                                         last_layer=self.get_last_layer(), split="train")
         loss_g += aeloss
 
@@ -139,7 +181,8 @@ class GAN(BaseModel):
         loss_d += dxx + dx
 
         # ae
-        discloss, log_dict_disc = self.loss(self.oriX, self.reconstructions, self.posterior, 1, self.global_step,
+        discloss, log_dict_disc = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
+                                            self.reconstructions, self.posterior, 1, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
         loss_d += discloss
 
