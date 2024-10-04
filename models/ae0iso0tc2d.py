@@ -23,11 +23,18 @@ class GAN(BaseModel):
             config = yaml.load(f, Loader=yaml.Loader)
 
         ddconfig = config['model']['params']["ddconfig"]
-        print(ddconfig)
-
+        if self.hparams.tc:
+            ddconfig['in_channels'] = 2
+            ddconfig['out_ch'] = 1
         self.hparams.netG = ddconfig['interpolator']#'ed023e'   # 128 > 128
+
         self.hparams.final = 'tanh'
-        self.net_g, self.net_d = self.set_networks()
+        if self.hparams.tc:
+            self.hparams.input_nc = 1  # this would not be used
+            self.hparams.output_nc = 2
+        self.net_g, self.net_dx = self.set_networks()
+        _, self.net_dy = self.set_networks()
+        _, self.net_dz = self.set_networks()
 
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
@@ -45,7 +52,7 @@ class GAN(BaseModel):
         self.netg_names = {'encoder': 'encoder', 'decoder': 'decoder',
                            'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv',
                            'net_g': 'net_g'}
-        self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d'}
+        self.netd_names = {'discriminator': 'discriminator', 'net_dx': 'net_dx', 'net_dy': 'net_dy', 'net_dz': 'net_dz'}
 
         # Configure optimizers
         self.configure_optimizers()
@@ -64,6 +71,10 @@ class GAN(BaseModel):
         parser.add_argument("--embed_dim", type=int, default=4)
         parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
         parser.add_argument("--skipl1", type=int, default=4)
+        parser.add_argument("--hbranch", type=str, default='mid')
+        parser.add_argument("--tc", action="store_true", default=False)
+        parser.add_argument("--l1how", type=str, default='dsp')
+        parser.add_argument("--advhow", type=str, default=None)
         #parswr.add_argument("--ddconfig", type=str)
         return parent_parser
 
@@ -94,21 +105,41 @@ class GAN(BaseModel):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def adv_loss_six_way(self, x, net_d, truth):
+    def get_projection_adv(self, x, depth=8, how=None):
+        if how == None:
+            return x
+        elif how == 'max':
+            x = x.permute(1, 2, 3, 0)
+            x = x.unfold(-1, depth, depth)
+            x, _ = x.max(dim=-1)
+            x = x.permute(3, 0, 1, 2)
+            return x
+
+    def adv_loss_x(self, x, truth):
+        # self.get_projection(self.XupX, depth=8, how=self.hparams.l1how)
+        # x: (B, C, X, Y, Z) > (B, C, X, Y, Z//8, 8)
+
         loss = 0
-        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                       net_d=net_d, truth=truth)
-        loss = loss / 6
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, Z, X)
+                                  net_d=self.net_dx, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, X, Z)
+                                  net_d=self.net_dx, truth=truth)
+        return loss
+
+    def adv_loss_y(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Z, Y)
+                                  net_d=self.net_dy, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Y, Z)
+                                  net_d=self.net_dy, truth=truth)
+        return loss
+
+    def adv_loss_z(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]),  # (Z, C, X, Y)
+                                  net_d=self.net_dz, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0]),  # (Z, C, Y, X)
+                                  net_d=self.net_dz, truth=truth)
         return loss
 
     def get_xy_plane(self, x):
@@ -118,33 +149,70 @@ class GAN(BaseModel):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
             batch['img'][0] = batch['img'][0][:, :, :, :, z_init:z_init + self.hparams.cropz]
+            if self.hparams.tc:
+                batch['img'][1] = batch['img'][1][:, :, :, :, z_init:z_init + self.hparams.cropz]
 
-        self.oriX = batch['img'][0]  # (B, C, X, Y, Z) # original
+        if self.hparams.tc:
+            self.oriX = torch.cat((batch['img'][0], batch['img'][1]), 1)
+        else:
+            self.oriX = batch['img'][0]  # (B, C, X, Y, Z) # original
 
         #self.input = self.get_input(batch, self.hparams.image_key)
         # AE
         self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
-        # hbranch (1, 256, 8, 8)
-        #print(hbranch.shape)
+
+        if self.hparams.hbranch == 'z':
+            hbranch = self.posterior.sample()
+            hbranch = self.decoder.conv_in(hbranch)
+
         # IsoGAN
         hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
         self.XupX = self.net_g(hbranch, method='decode')['out0']
+
+    def get_projection(self, x, depth, how='dsp'):
+        if how == 'dsp':
+            x = x[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1]
+        else:
+            x = x.unfold(-1, depth, depth)
+            if how == 'mean':
+                x = x.mean(dim=-1)
+            elif how == 'max':
+                x, _ = x.max(dim=-1)
+        return x
 
     def backward_g(self):
         loss_g = 0
         loss_dict = {}
 
-        axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+        ax = self.adv_loss_x(self.XupX, truth=True)
+        ay = self.adv_loss_y(self.XupX, truth=True)
+        az = self.adv_loss_z(self.XupX, truth=True)
+        loss_dict['ax'] = ax
+        loss_g += ax * 0.5
+        loss_dict['ay'] = ay
+        loss_g += ay * 0.5
+        loss_dict['az'] = az
+        loss_g += az * 0.5
 
-        loss_dict['axx'] = axx
-        loss_g += axx
+        if self.hparams.tc:
+            #loss_l1 = self.add_loss_l1(a=self.XupX[:, :1, :, :, ::self.uprate * self.hparams.skipl1],
+            #                           b=self.oriX[:, :1, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX[:, :1, :, :, :], depth=8, how=self.hparams.l1how),
+                                       b=self.oriX[:, :1, :, :, ::self.hparams.skipl1])
+        else:
+            #loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.uprate * self.hparams.skipl1],
+            #                           b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=8, how=self.hparams.l1how),
+                                       b=self.oriX[:, :, :, :, :])
         loss_dict['l1'] = loss_l1
         loss_g += loss_l1
 
+        oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
+        if self.hparams.tc:
+            oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :1, :, :, 0]  # only use the first channel for reconstruction
+
         # ae
-        aeloss, log_dict_ae = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
+        aeloss, log_dict_ae = self.loss(oriXpermute,
                                         self.reconstructions, self.posterior, 0, self.global_step,
                                         last_layer=self.get_last_layer(), split="train")
         loss_g += aeloss
@@ -156,15 +224,33 @@ class GAN(BaseModel):
         loss_d = 0
         loss_dict = {}
 
-        dxx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=False)
-        # ADV(X)+
-        dx = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_d, truth=True)
+        dxF = self.adv_loss_x(self.XupX, truth=False)
+        dyF = self.adv_loss_y(self.XupX, truth=False)
+        dzF = self.adv_loss_z(self.XupX, truth=False)
+        loss_dict['dxF'] = dxF
+        loss_d += dxF * 0.5
+        loss_dict['dyF'] = dyF
+        loss_d += dyF * 0.5
+        loss_dict['dzF'] = dzF
+        loss_d += dzF * 0.5
 
-        loss_dict['dxx_x'] = dxx + dx
-        loss_d += dxx + dx
+        # ADV(X)+
+        dxT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dx, truth=True)
+        dyT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dy, truth=True)
+        dzT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dz, truth=True)
+        loss_dict['dxT'] = dxT
+        loss_d += dxT * 0.5
+        loss_dict['dyT'] = dyT
+        loss_d += dyT * 0.5
+        loss_dict['dzT'] = dzT
+        loss_d += dzT * 0.5
+
+        oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
+        if self.hparams.tc:
+            oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :1, :, :, 0]  # only use the first channel for reconstruction
 
         # ae
-        discloss, log_dict_disc = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
+        discloss, log_dict_disc = self.loss(oriXpermute,
                                             self.reconstructions, self.posterior, 1, self.global_step,
                                             last_layer=self.get_last_layer(), split="train")
         loss_d += discloss
@@ -239,6 +325,8 @@ if __name__ == '__main__':
     args = read_json_to_args('/media/ExtHDD01/logs/womac4/vae/0/0.json')
     args.embed_dim = 4
     args.ldmyaml = 'ldmaex2'
+    args.tc = False
+    args.hbranch = 2
     gan = GAN(args, train_loader=None, eval_loader=None, checkpoints=None)
 
     #z, hbranch = gan.encode(torch.randn(1, 1, 64, 64))

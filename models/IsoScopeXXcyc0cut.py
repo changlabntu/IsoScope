@@ -122,6 +122,7 @@ class GAN(BaseModel):
         parser.add_argument("--lambI", type=int, default=0.5)
         parser.add_argument("--uprate", type=int, default=4)
         parser.add_argument("--skipl1", type=int, default=1)
+        parser.add_argument("--randl1", action='store_true')
         parser.add_argument("--nocyc", action='store_true')
         parser.add_argument("--nocut", action='store_true')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
@@ -133,9 +134,6 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
-        #parser.add_argument('--l1scheme', type=str, default='Xup', help='what to use for L1, Xup or oriX')
-        parser.add_argument('--cycscheme', type=str, default='oriX', help='what to use for cyc adv, Xup or oriX')
-        parser.add_argument('--resample', action='store_true')
         return parent_parser
 
     def test_method(self, net_g, img):
@@ -154,13 +152,11 @@ class GAN(BaseModel):
 
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
         #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
-        if self.hparams.resample:
-            rand_init = np.random.randint(self.hparams.uprate)
-            self.Xup = self.oriX[:, :, :, :, rand_init::self.hparams.uprate]
-            self.Xup = self.upsample(self.oriX)
 
         self.goutz = self.net_g(self.Xup, method='encode')
         self.XupX = self.net_g(self.goutz, method='decode')['out0']
+
+        self.XupX = (self.XupX + self.Xup) / 2
 
         if not self.hparams.nocyc:
             self.XupXback = self.net_gback(self.XupX)['out0']
@@ -207,8 +203,14 @@ class GAN(BaseModel):
         loss_dict = {}
 
         axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+
+        if self.hparams.randl1:
+            shift = np.random.randint(0, self.hparams.skipl1)
+        else:
+            shift = 0
+
+        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, self.hparams.uprate*shift::self.hparams.uprate * self.hparams.skipl1],
+                                   b=self.oriX[:, :, :, :, shift::self.hparams.skipl1]) * self.hparams.lamb
 
         loss_dict['axx'] = axx
         loss_g += axx
@@ -224,9 +226,9 @@ class GAN(BaseModel):
 
         if not self.hparams.nocut:
             # (X, XupX)
+            #self.goutz = self.net_g(self.Xup, method='encode')
             feat_q = self.goutz
             feat_k = self.net_g(self.XupX, method='encode')
-            #feat_k = self.net_g(self.XupXback, method='encode')
 
             feat_k_pool, sample_ids = self.netF(feat_k, self.hparams.num_patches,
                                                 None)  # get source patches by random id
@@ -258,10 +260,7 @@ class GAN(BaseModel):
         # ADV dyy
         if not self.hparams.nocyc:
             dyy = self.adv_loss_six_way_y(self.XupXback, truth=False)
-            if self.hparams.cycscheme == 'Xup':
-                dy = self.adv_loss_six_way_y(self.Xup, truth=True)
-            elif self.hparams.cycscheme == 'oriX':
-                dy = self.adv_loss_six_way_y(self.oriX, truth=True)
+            dy = self.adv_loss_six_way_y(self.oriX, truth=True)
 
             loss_dict['dyy'] = dyy + dy
             loss_d += dyy + dy

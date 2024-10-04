@@ -76,16 +76,13 @@ class GAN(BaseModel):
     def __init__(self, hparams, train_loader, eval_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
-        self.hparams.netG = 'ed023dE'  # 16 > 128
         self.hparams.final = 'tanh'
         self.net_g, self.net_d = self.set_networks()
-        self.hparams.netG = 'ed023d'   # 128 > 128
+        if self.hparams.netGback is not None:
+            self.hparams.netG = self.hparams.netGback
         self.hparams.final = 'tanh'
         self.net_gback, self.net_dzy = self.set_networks()
         self.net_dzx = copy.deepcopy(self.net_dzy)
-
-        # anomaly
-
 
         # save model names
         self.netg_names = {'net_g': 'net_g', 'net_gback': 'net_gback'}
@@ -138,6 +135,11 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
+        #parser.add_argument('--l1scheme', type=str, default='Xup', help='what to use for L1, Xup or oriX')
+        parser.add_argument('--cycscheme', type=str, default='oriX', help='what to use for cyc adv, Xup or oriX')
+        parser.add_argument('--resample', action='store_true')
+        parser.add_argument('--netGback', type=str, default=None)
+        parser.add_argument('--flipdiff', action='store_true')
         return parent_parser
 
     def test_method(self, net_g, img):
@@ -156,13 +158,20 @@ class GAN(BaseModel):
 
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
         #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
+        if self.hparams.resample:
+            rand_init = np.random.randint(self.hparams.uprate)
+            self.Xup = self.oriX[:, :, :, :, rand_init::self.hparams.uprate]
+            self.Xup = self.upsample(self.oriX)
 
-        self.goutz = self.net_g(self.oriX, method='encode')
-        #print(self.goutz[-1].shape)
-        self.XupX = self.net_g(self.goutz, method='decode')['out0']
+        if self.hparams.flipdiff:
+            self.XupX = self.net_g(self.Xup)['out0']
+            self.XupXf = torch.flip(self.net_g(torch.flip(self.Xup, [4]))['out0'], [4])
+        else:
+            self.XupX = self.net_g(self.Xup)['out0']
 
         if not self.hparams.nocyc:
             self.XupXback = self.net_gback(self.XupX)['out0']
+
 
     def get_xy_plane(self, x):  # (B, C, X, Y, Z)
         return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]  # (Z, C, X, Y, B)
@@ -223,9 +232,9 @@ class GAN(BaseModel):
 
         if not self.hparams.nocut:
             # (X, XupX)
-            #self.goutz = self.net_g(self.Xup, method='encode')
             feat_q = self.goutz
             feat_k = self.net_g(self.XupX, method='encode')
+            #feat_k = self.net_g(self.XupXback, method='encode')
 
             feat_k_pool, sample_ids = self.netF(feat_k, self.hparams.num_patches,
                                                 None)  # get source patches by random id
@@ -238,6 +247,12 @@ class GAN(BaseModel):
             loss_nce = total_nce_loss / 4
             loss_dict['nce'] = loss_nce
             loss_g += loss_nce
+
+        # flip_diff
+        if self.hparams.flipdiff:
+            loss_flip = self.add_loss_l1(a=self.XupXf, b=self.XupX) * self.hparams.lamb
+            loss_dict['flip'] = loss_flip
+            loss_g += loss_flip
 
         loss_dict['sum'] = loss_g
 
@@ -257,7 +272,10 @@ class GAN(BaseModel):
         # ADV dyy
         if not self.hparams.nocyc:
             dyy = self.adv_loss_six_way_y(self.XupXback, truth=False)
-            dy = self.adv_loss_six_way_y(self.oriX, truth=True)
+            if self.hparams.cycscheme == 'Xup':
+                dy = self.adv_loss_six_way_y(self.Xup, truth=True)
+            elif self.hparams.cycscheme == 'oriX':
+                dy = self.adv_loss_six_way_y(self.oriX, truth=True)
 
             loss_dict['dyy'] = dyy + dy
             loss_d += dyy + dy

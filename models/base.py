@@ -11,6 +11,7 @@ import pytorch_lightning as pl
 from utils.data_utils import *
 from pytorch_lightning.utilities import rank_zero_only
 import yaml
+import torchvision.transforms as transforms
 
 
 class Namespace:
@@ -130,8 +131,34 @@ class BaseModel(pl.LightningModule):
         self.all_out = []
         self.all_loss = []
 
+        self.log_image = {}
+
     #def update_optimizer_scheduler(self):
     #    [self.optimizer_d, self.optimizer_g], [] = self.configure_optimizers()
+
+    def save_tensor_to_png(self, tensor, path):
+        # Ensure the tensor is on CPU
+        tensor = tensor.detach().cpu()
+
+        # If the tensor is 2D, convert it to 3D
+        if tensor.dim() == 2:
+            tensor = tensor.unsqueeze(0)
+
+        # Ensure the tensor has 3 dimensions
+        assert tensor.dim() == 3, "Tensor should have 3 dimensions: (C, H, W)"
+
+        # Normalize the tensor if it's not in [0, 1] range
+        if tensor.min() < 0 or tensor.max() > 1:
+            tensor = (tensor - tensor.min()) / (tensor.max() - tensor.min())
+
+        # Convert to PIL Image
+        if tensor.shape[0] == 1:  # Grayscale
+            img = transforms.ToPILImage()(tensor.squeeze())
+        else:  # RGB
+            img = transforms.ToPILImage()(tensor)
+
+        # Save the image
+        img.save(path)
 
     def configure_optimizers(self):
         print('configuring optimizer being called....')
@@ -224,6 +251,10 @@ class BaseModel(pl.LightningModule):
 
         self.net_g_scheduler.step()
         self.net_d_scheduler.step()
+
+        # log saved images
+        for k in self.log_image.keys():
+            self.save_tensor_to_png(self.log_image[k], self.dir_checkpoints + os.path.join(str(self.epoch).zfill(4) + k + '.png'))
 
         self.epoch += 1
 

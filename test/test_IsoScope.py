@@ -66,7 +66,6 @@ def test_IsoScope(x0, model, **kwargs):
 
     out_all = np.stack(out_all, axis=3)
 
-    print('hi')
     return out_all, patch[0].numpy(), patch0.numpy()
 
 
@@ -109,7 +108,7 @@ def test_over_volumne(kwargs, dx, dy, dz, zrange, xrange, yrange, destination):
                                          'start_dim1': ix, 'end_dim1': ix + dx,
                                          'start_dim2': iy, 'end_dim2': iy + dy}
 
-                out_all, patch = test_IsoScope(x0, model, **kwargs)
+                out_all, patch, _ = test_IsoScope(x0, model, **kwargs)
 
                 tiff.imwrite(destination + 'xy/' + str(iz) + '_' + str(ix) + '_' + str(iy) + '.tif', out_all.mean(axis=3).astype(np.float32))
                 tiff.imwrite(destination + 'ori/' + str(iz) + '_' + str(ix) + '_' + str(iy) + '.tif', patch)
@@ -218,7 +217,7 @@ def norm_x0(x0, norm_method, exp_trd, exp_ftr, trd):
         x0 = x0 / exp_ftr
         x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float()
     elif norm_method == '11':
-        x0[x0 >= trd] = trd
+        x0[x0 >= trd[1]] = trd[1]
         #x0 = x0 / x0.max()
         x0 = (x0 - x0.min()) / (x0.max() - x0.min())
         x0 = (x0 - 0.5) * 2
@@ -233,14 +232,15 @@ def norm_x0(x0, norm_method, exp_trd, exp_ftr, trd):
         x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float()
     return x0
 
-def main_assemble_volume(x0, kwargs):
+
+def main_assemble_volume(kwargs):
     # assemble the volume
     dz, dx, dy = kwargs['assemble_params']['dx_shape']
-    sz, sx, sy = kwargs['assemble_params']['sx_shape']
+    #sz, sx, sy = kwargs['assemble_params']['sx_shape']
     w = get_weight(kwargs['assemble_params']['weight_shape'], method='cross', C=kwargs['assemble_params']['C'])
-    zrange = range(0, x0[0].shape[2], sz)[kwargs['assemble_params']['zrange_start']:kwargs['assemble_params']['zrange_end']]
-    xrange = range(0, x0[0].shape[3], sx)[kwargs['assemble_params']['xrange_start']:kwargs['assemble_params']['xrange_end']]
-    yrange = range(0, x0[0].shape[4], sy)[kwargs['assemble_params']['yrange_start']:kwargs['assemble_params']['yrange_end']]
+    zrange = range(*kwargs['assemble_params']['zrange'])
+    xrange = range(*kwargs['assemble_params']['xrange'])
+    yrange = range(*kwargs['assemble_params']['yrange'])
 
     recreate_volume_folder(destination + '/cycout/')  # DELETE and recreate the folder
     test_over_volumne(kwargs, dx, dy, dz, zrange=zrange, xrange=xrange, yrange=yrange, destination=destination + '/cycout/')
@@ -273,7 +273,7 @@ if __name__ == '__main__':
         x0[i] = norm_x0(x0[i], kwargs['norm_method'][i],
                         kwargs['exp_trd'][i], kwargs['exp_ftr'][i], kwargs['trd'][i])
 
-    # BRAIN
+    # FOR BRAIN
     #x0 = np.transpose(x0, (1, 2, 0))
     #x0 = x0[:, :, ::4]
 
@@ -298,11 +298,16 @@ if __name__ == '__main__':
     #    main_assemble_volume(x0, kwargs)
 
     dz, dx, dy = kwargs['assemble_params']['dx_shape']
-    sz, sx, sy = kwargs['assemble_params']['sx_shape']
+    #sz, sx, sy = kwargs['assemble_params']['sx_shape']
     w = get_weight(kwargs['assemble_params']['weight_shape'], method='cross', C=kwargs['assemble_params']['C'])
-    zrange = range(96, 224+1, 32)
-    xrange = range(448, 448+1)
-    yrange = range(0, 1536+1, 192)
+    zrange = range(*kwargs['assemble_params']['zrange'])
+    xrange = range(*kwargs['assemble_params']['xrange'])
+    yrange = range(*kwargs['assemble_params']['yrange'])
+
+    recreate_volume_folder(destination + '/cycout/')  # DELETE and recreate the folder
+    test_over_volumne(kwargs, dx, dy, dz, zrange=zrange, xrange=xrange, yrange=yrange,
+                      destination=destination + '/cycout/')
+
     assemble_microscopy_volumne(kwargs, w, zrange=zrange, xrange=xrange, yrange=yrange,
                                 source=destination + '/cycout/xy/')
 

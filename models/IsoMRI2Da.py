@@ -76,15 +76,19 @@ class GAN(BaseModel):
     def __init__(self, hparams, train_loader, eval_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
-        self.net_g, self.net_d = self.set_networks()
-        self.hparams.netG = 'ed023e'   # 128 > 128
+        self.hparams.final = 'tanh'
+        self.net_g, self.net_dx = self.set_networks()
+        _, self.net_dy = self.set_networks()
+        _, self.net_dz = self.set_networks()
+
         self.hparams.final = 'tanh'
         self.net_gback, self.net_dzy = self.set_networks()
         self.net_dzx = copy.deepcopy(self.net_dzy)
 
         # save model names
         self.netg_names = {'net_g': 'net_g', 'net_gback': 'net_gback'}
-        self.netd_names = {'net_d': 'net_d', 'net_dzy': 'net_dzy', 'net_dzx': 'net_dzx'}
+        self.netd_names = {'net_dx': 'net_dx', 'net_dy': 'net_dy', 'net_dz': 'net_dz',
+                           'net_dzy': 'net_dzy', 'net_dzx': 'net_dzx'}
         #self.netg_names = {'net_gy': 'net_gy'}
         #self.netd_names = {'net_dy': 'net_dy'}
 
@@ -119,9 +123,12 @@ class GAN(BaseModel):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitModel")
         # coefficient for the identify loss
-        parser.add_argument("--lambI", type=int, default=0.5)
+        parser.add_argument("--lambB", type=int, default=1)
+        parser.add_argument("--l1how", type=str, default='dsp')
+        parser.add_argument("--advhow", type=str, default=None)
         parser.add_argument("--uprate", type=int, default=4)
         parser.add_argument("--skipl1", type=int, default=1)
+        parser.add_argument("--randl1", action='store_true')
         parser.add_argument("--nocyc", action='store_true')
         parser.add_argument("--nocut", action='store_true')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
@@ -152,8 +159,7 @@ class GAN(BaseModel):
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
         #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
 
-        self.goutz = self.net_g(self.oriX, method='encode')
-        #print(self.goutz[-1].shape)
+        self.goutz = self.net_g(self.Xup, method='encode')
         self.XupX = self.net_g(self.goutz, method='decode')['out0']
 
         if not self.hparams.nocyc:
@@ -162,37 +168,58 @@ class GAN(BaseModel):
     def get_xy_plane(self, x):  # (B, C, X, Y, Z)
         return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]  # (Z, C, X, Y, B)
 
-    def adv_loss_six_way(self, x, net_d, truth):
+
+    def get_projection_adv(self, x, depth=8, how=None):
+        if how == None:
+            return x
+        elif how == 'max':
+            x = x.permute(1, 2, 3, 0)
+            x = x.unfold(-1, depth, depth)
+            x, _ = x.max(dim=-1)
+            x = x.permute(3, 0, 1, 2)
+            return x
+
+    def adv_loss_x(self, x, truth):
+        # self.get_projection(self.XupX, depth=8, how=self.hparams.l1how)
+        # x: (B, C, X, Y, Z) > (B, C, X, Y, Z//8, 8)
+
         loss = 0
-        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                       net_d=net_d, truth=truth)
-        loss = loss / 6
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, Z, X)
+                                  net_d=self.net_dx, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, X, Z)
+                                  net_d=self.net_dx, truth=truth)
+        return loss
+
+    def adv_loss_y(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Z, Y)
+                                  net_d=self.net_dy, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Y, Z)
+                                  net_d=self.net_dy, truth=truth)
+        return loss
+
+    def adv_loss_z(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]),  # (Z, C, X, Y)
+                                  net_d=self.net_dz, truth=truth)
+        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0]),  # (Z, C, Y, X)
+                                  net_d=self.net_dz, truth=truth)
         return loss
 
     def adv_loss_six_way_y(self, x, truth):
         loss = 0
         loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
                                         net_d=self.net_dzy, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
                                         net_d=self.net_dzy, truth=truth)
         loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
                                         net_d=self.net_dzx, truth=truth)
         loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
                                         net_d=self.net_dzx, truth=truth)
         loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                        net_d=self.net_d, truth=truth)
+                                        net_d=self.net_dz, truth=truth)
         loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                        net_d=self.net_d, truth=truth)
+                                        net_d=self.net_dz, truth=truth)
         loss = loss / 6
         return loss
 
@@ -200,21 +227,35 @@ class GAN(BaseModel):
         loss_g = 0
         loss_dict = {}
 
-        axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+        ax = self.adv_loss_x(self.XupX, truth=True)
+        ay = self.adv_loss_y(self.XupX, truth=True)
+        az = self.adv_loss_z(self.XupX, truth=True)
+        loss_dict['ax'] = ax
+        loss_g += ax * 0.5
+        loss_dict['ay'] = ay
+        loss_g += ay * 0.5
+        loss_dict['az'] = az
+        loss_g += az * 0.5
 
-        loss_dict['axx'] = axx
-        loss_g += axx
+        if self.hparams.randl1:
+            shift = np.random.randint(0, self.hparams.skipl1)
+        else:
+            shift = -1
+
+        loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=8, how=self.hparams.l1how),
+                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
+
         loss_dict['l1'] = loss_l1
-        loss_g += loss_l1
+        loss_g += loss_l1 * self.hparams.lamb
 
         if not self.hparams.nocyc:
             gback = self.adv_loss_six_way_y(self.XupXback, truth=True)
             loss_dict['gback'] = gback
             loss_g += gback
-            if self.hparams.lamb > 0:
-                loss_g += self.add_loss_l1(a=self.XupXback, b=self.Xup) * self.hparams.lamb
+
+            loss_l1_back = self.add_loss_l1(a=self.XupXback, b=self.Xup)
+            loss_dict['l1b'] = loss_l1_back
+            loss_g += loss_l1_back * self.hparams.lambB
 
         if not self.hparams.nocut:
             # (X, XupX)
@@ -242,12 +283,26 @@ class GAN(BaseModel):
         loss_d = 0
         loss_dict = {}
 
-        dxx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=False)
-        # ADV(X)+
-        dx = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_d, truth=True)
+        dxF = self.adv_loss_x(self.XupX, truth=False)
+        dyF = self.adv_loss_y(self.XupX, truth=False)
+        dzF = self.adv_loss_z(self.XupX, truth=False)
+        loss_dict['dxF'] = dxF
+        loss_d += dxF * 0.5
+        loss_dict['dyF'] = dyF
+        loss_d += dyF * 0.5
+        loss_dict['dzF'] = dzF
+        loss_d += dzF * 0.5
 
-        loss_dict['dxx_x'] = dxx + dx
-        loss_d += dxx + dx
+        # ADV(X)+
+        dxT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dx, truth=True)
+        dyT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dy, truth=True)
+        dzT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dz, truth=True)
+        loss_dict['dxT'] = dxT
+        loss_d += dxT * 0.5
+        loss_dict['dyT'] = dyT
+        loss_d += dyT * 0.5
+        loss_dict['dzT'] = dzT
+        loss_d += dzT * 0.5
 
         # ADV dyy
         if not self.hparams.nocyc:
@@ -260,6 +315,17 @@ class GAN(BaseModel):
         loss_dict['sum'] = loss_d
 
         return loss_dict
+
+    def get_projection(self, x, depth, how='mean'):
+        if how == 'dsp':
+            x = x[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1]
+        else:
+            x = x.unfold(-1, depth, depth)
+            if how == 'mean':
+                x = x.mean(dim=-1)
+            elif how == 'max':
+                x, _ = x.max(dim=-1)
+        return x
 
 
 # USAGE

@@ -119,9 +119,11 @@ class GAN(BaseModel):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitModel")
         # coefficient for the identify loss
-        parser.add_argument("--lambI", type=int, default=0.5)
+        parser.add_argument("--lambB", type=int, default=1)
+        parser.add_argument("--l1how", type=str, default='dsp')
         parser.add_argument("--uprate", type=int, default=4)
         parser.add_argument("--skipl1", type=int, default=1)
+        parser.add_argument("--randl1", action='store_true')
         parser.add_argument("--nocyc", action='store_true')
         parser.add_argument("--nocut", action='store_true')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
@@ -182,7 +184,7 @@ class GAN(BaseModel):
         loss = 0
         loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
                                         net_d=self.net_dzy, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
                                         net_d=self.net_dzy, truth=truth)
         loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
                                         net_d=self.net_dzx, truth=truth)
@@ -200,26 +202,34 @@ class GAN(BaseModel):
         loss_dict = {}
 
         axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l2(a=self.XupX[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
+
+        if self.hparams.randl1:
+            shift = np.random.randint(0, self.hparams.skipl1)
+        else:
+            shift = -1
+
+        loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=8, how=self.hparams.l1how),
+                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
 
         loss_dict['axx'] = axx
         loss_g += axx
         loss_dict['l1'] = loss_l1
-        loss_g += loss_l1
+        loss_g += loss_l1 * self.hparams.lamb
 
         if not self.hparams.nocyc:
             gback = self.adv_loss_six_way_y(self.XupXback, truth=True)
             loss_dict['gback'] = gback
             loss_g += gback
-            if self.hparams.lamb > 0:
-                loss_g += self.add_loss_l2(a=self.XupXback, b=self.Xup) * self.hparams.lamb
+
+            loss_l1_back = self.add_loss_l1(a=self.XupXback, b=self.Xup)
+            loss_dict['l1b'] = loss_l1_back
+            loss_g += loss_l1_back * self.hparams.lambB
 
         if not self.hparams.nocut:
             # (X, XupX)
+            #self.goutz = self.net_g(self.Xup, method='encode')
             feat_q = self.goutz
             feat_k = self.net_g(self.XupX, method='encode')
-            #feat_k = self.net_g(self.XupXback, method='encode')
 
             feat_k_pool, sample_ids = self.netF(feat_k, self.hparams.num_patches,
                                                 None)  # get source patches by random id
@@ -259,6 +269,17 @@ class GAN(BaseModel):
         loss_dict['sum'] = loss_d
 
         return loss_dict
+
+    def get_projection(self, x, depth, how='mean'):
+        if how == 'dsp':
+            x = x[:, :, :, :, ::self.hparams.uprate * self.hparams.skipl1]
+        else:
+            x = x.unfold(-1, depth, depth)
+            if how == 'mean':
+                x = x.mean(dim=-1)
+            elif how == 'max':
+                x, _ = x.max(dim=-1)
+        return x
 
 
 # USAGE

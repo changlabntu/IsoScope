@@ -448,21 +448,29 @@ class Encoder(nn.Module):
 
         # middle
         h = hs[-1]
+        #if self.branch_point == 0:
         hbranch = h
-        #print(h.shape)
+        #print(h.shape)  # (1, 256, 32, 32), branch point 0
         h = self.mid.block_1(h, temb)
-        #print(h.shape)
+        #print(h.shape)  # (1, 256, 32, 32)
         h = self.mid.attn_1(h)
-        #print(h.shape)
+        #print(h.shape)  # (1, 256, 32, 32)
         h = self.mid.block_2(h, temb)
-        #print(h.shape)
+        #print(h.shape)  # (1, 256, 32, 32)
+
+        #if self.branch_point == 1:
+        #    hbranch = h
 
         # end
         h = self.norm_out(h)
-        #print(h.shape)
+        #print(h.shape)  # (1, 256, 32, 32)
         h = nonlinearity(h)
         h = self.conv_out(h)
-        #print(h.shape)
+        #print(h.shape)  # (1, 8, 32, 32)
+
+        #if self.branch_point == 2:
+        #    hbranch = h
+
         return h, hbranch
 
 
@@ -841,3 +849,35 @@ class FirstStagePostProcessor(nn.Module):
             z = rearrange(z,'b c h w -> b (h w) c')
         return z
 
+if __name__ == "__main__":
+    import yaml
+    from argparse import ArgumentParser
+    from ldm.util import instantiate_from_config
+
+    parser = ArgumentParser()
+    parser.add_argument("--config", type=str, default='ldm/ldmaex2.yaml')
+    parser.add_argument("--ckpt", type=str, default=None)
+    parser.add_argument("--ignore_keys", type=str, default="")
+    parser.add_argument("--image_key", type=str, default="image")
+    parser.add_argument("--colorize_nlabels", type=int, default=None)
+    parser.add_argument("--monitor", type=str, default=None)
+    parser.add_argument('--mode', type=str, default='dummy')
+    parser.add_argument('--port', type=str, default='dummy')
+    parser.add_argument('--host', type=str, default='dummy')
+
+    args = parser.parse_args()
+
+    with open(args.config, "r") as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+
+    ddconfig = config['model']['params']["ddconfig"]
+
+    encoder = Encoder(**ddconfig)
+    decoder = Decoder(**ddconfig)
+
+    print(sum(p.numel() for p in encoder.parameters()))
+    print(sum(p.numel() for p in decoder.parameters()))
+
+    h = encoder(torch.rand(1, 1, 256, 256))
+
+    #ud = UpsampleDecoder(in_channels=1, out_channels=1, ch=64, num_res_blocks=2, resolution=128)

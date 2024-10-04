@@ -141,7 +141,7 @@ class GAN(BaseModel):
         return output[0]
 
     def generation(self, batch):
-        if self.hparams.cropz > 0:
+        if (self.hparams.cropz > 0) & (batch['img'][0].shape[4] > self.hparams.cropz):
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
             batch['img'][0] = batch['img'][0][:, :, :, :, z_init:z_init + self.hparams.cropz]
 

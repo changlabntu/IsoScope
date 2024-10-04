@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from contextlib import contextmanager
+import copy
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
@@ -28,6 +29,9 @@ class GAN(BaseModel):
         self.hparams.netG = ddconfig['interpolator']#'ed023e'   # 128 > 128
         self.hparams.final = 'tanh'
         self.net_g, self.net_d = self.set_networks()
+        self.hparams.final = 'tanh'
+        self.net_gback, self.net_dzy = self.set_networks()
+        self.net_dzx = copy.deepcopy(self.net_dzy)
 
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
@@ -44,8 +48,9 @@ class GAN(BaseModel):
         # Save model names
         self.netg_names = {'encoder': 'encoder', 'decoder': 'decoder',
                            'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv',
-                           'net_g': 'net_g'}
-        self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d'}
+                           'net_g': 'net_g', 'net_gback': 'net_gback'}
+        self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d',
+                           'net_dzy': 'net_dzy', 'net_dzx': 'net_dzx'}
 
         # Configure optimizers
         self.configure_optimizers()
@@ -53,6 +58,11 @@ class GAN(BaseModel):
         #self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
         self.uprate = (hparams.cropsize // hparams.cropz)
         print('uprate: ' + str(self.uprate))
+
+        if self.hparams.cropz > 0:
+            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropz * hparams.uprate), mode='trilinear')
+        else:
+            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, 32 * hparams.uprate), mode='trilinear')
 
         #lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         #if opt.scale_lr:
@@ -62,8 +72,11 @@ class GAN(BaseModel):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("AutoencoderKL")
         parser.add_argument("--embed_dim", type=int, default=4)
+        parser.add_argument("--uprate", type=int, default=8)
         parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
         parser.add_argument("--skipl1", type=int, default=4)
+        parser.add_argument("--nocut", action='store_true')
+        parser.add_argument("--nocyc", action='store_true')
         #parswr.add_argument("--ddconfig", type=str)
         return parent_parser
 
@@ -111,6 +124,23 @@ class GAN(BaseModel):
         loss = loss / 6
         return loss
 
+    def adv_loss_six_way_y(self, x, truth):
+        loss = 0
+        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                        net_d=self.net_dzy, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                        net_d=self.net_dzy, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
+                                        net_d=self.net_dzx, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
+                                        net_d=self.net_dzx, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
+                                        net_d=self.net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
+                                        net_d=self.net_d, truth=truth)
+        loss = loss / 6
+        return loss
+
     def get_xy_plane(self, x):
         return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]
 
@@ -130,6 +160,15 @@ class GAN(BaseModel):
         hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
         self.XupX = self.net_g(hbranch, method='decode')['out0']
 
+        self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
+        #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
+
+        self.goutz = self.net_g(self.Xup, method='encode')
+        self.XupX = self.net_g(self.goutz[-1], method='decode')['out0']
+
+        if not self.hparams.nocyc:
+            self.XupXback = self.net_gback(self.XupX)['out0']
+
     def backward_g(self):
         loss_g = 0
         loss_dict = {}
@@ -142,6 +181,14 @@ class GAN(BaseModel):
         loss_g += axx
         loss_dict['l1'] = loss_l1
         loss_g += loss_l1
+
+        # cyc
+        if not self.hparams.nocyc:
+            gback = self.adv_loss_six_way_y(self.XupXback, truth=True)
+            loss_dict['gback'] = gback
+            loss_g += gback
+            if self.hparams.lamb > 0:
+                loss_g += self.add_loss_l1(a=self.XupXback, b=self.Xup) * self.hparams.lamb
 
         # ae
         aeloss, log_dict_ae = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
@@ -162,6 +209,14 @@ class GAN(BaseModel):
 
         loss_dict['dxx_x'] = dxx + dx
         loss_d += dxx + dx
+
+        # ADV dyy
+        if not self.hparams.nocyc:
+            dyy = self.adv_loss_six_way_y(self.XupXback, truth=False)
+            dy = self.adv_loss_six_way_y(self.oriX, truth=True)
+
+            loss_dict['dyy'] = dyy + dy
+            loss_d += dyy + dy
 
         # ae
         discloss, log_dict_disc = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],

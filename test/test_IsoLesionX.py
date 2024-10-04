@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import skimage.measure
 import yaml
+from utils.data_utils import imagesc
 
 
 def old_function():
@@ -147,6 +148,10 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
         x0 = tiff.imread(subjects[i])
         filename = subjects[i].split('/')[-1].split('.')[0]
 
+
+        #x0 = tiff.imread('/media/ExtHDD01/oai_diffusion_interpolated/original/selected/9031426_01_RIGHT.tif')
+        #net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet3d/unet3d/checkpoints/net_g_model_epoch_100.pth', map_location=torch.device('cpu'))
+
         x0 = norm_11(x0, trd)
         x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float().permute(0, 1, 3, 4, 2)  # (B, C, H, W, D)
 
@@ -159,18 +164,23 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
             #    padR = x0[:, :, :, :, -mirror_padding * 8:]
             x0 = torch.cat((torch.flip(padL, [4]), x0, torch.flip(padR, [4])), 4)
 
-        if to_upsample:
-            upsample = torch.nn.Upsample(size=(x0.shape[2], x0.shape[3], x0.shape[4] * 8), mode='trilinear')
-            rand_init = np.random.randint(8)
-            print('rand_init', rand_init)
-            x0 = upsample(x0)
-            x0 = x0[:, :, :, :, rand_init::8]
-            x0 = upsample(x0)
+        x00 = 1 * x0
 
         all = []
-        for _ in range(args.num_mc):
-            stack_y = []
+        for mc in range(args.num_mc):
 
+            if to_upsample:
+                upsample = torch.nn.Upsample(size=(x00.shape[2], x00.shape[3], x00.shape[4] * 8), mode='trilinear')
+                rand_init = 0#np.random.randint(8)
+                print('rand_init', rand_init)
+                x0 = upsample(x00)
+                x0 = x0[:, :, :, :, rand_init::8]
+                x0 = upsample(x0)
+
+            print(x00.shape)
+            print(x0.shape)
+
+            stack_y = []
             if z_pad:
                 # random shiftting
                 shift_L = np.random.randint(0, 16)  # z-direction random padding
@@ -184,7 +194,6 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
             if args.stack_direction == 'y':
                 for iy in [0, 128, 256]:
                     out = test_once(x0pad[:, :, :, iy:iy+128, :], net)
-
                     stack_y.append(out)
                 combine = np.concatenate(stack_y, 2)
             elif args.stack_direction == 'x':
@@ -192,6 +201,12 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
                     out = test_once(x0pad[:, :, ix:ix+128, :, :], net)
                     stack_y.append(out)
                 combine = np.concatenate(stack_y, 1)
+            elif args.stack_direction == 'z':
+                print(args.stack_direction)
+                for iz in [0, 128, 256]:
+                    out = test_once(x0pad[:, :, :, :, iz:iz+128], net)
+                    stack_y.append(out)
+                #combine = np.concatenate(stack_y, 2)
             else:
                 out = test_once(x0pad, net)
                 combine = out
@@ -209,18 +224,9 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
             all.append(combine)
         combine = np.stack(all, 3)
         combine = np.mean(combine, 3)
+        #combine = all[-1]
 
         tiff.imwrite(destination + filename, combine)
-
-
-def test_once(x0, net):
-    if args.gpu:
-        x0 = x0.cuda()
-    out_all = net(x0)['out0']
-    out_all = out_all.detach().cpu()
-    out_all = out_all[0, 0, :, :, :].numpy()
-    out_all = np.transpose(out_all, (2, 0, 1))
-    return out_all
 
 
 def calculate_difference(x_list, y_list, destination, mask_list=None):
@@ -277,23 +283,30 @@ def to_8bit(x):
 
 
 def norm_11(x, trd=None):
+    print(trd)
+    print(x.min(), x.max())
+
     if trd is not None:
         x[x > trd[1]] = trd[1]
         if trd[0] is not None:
             x[x < trd[0]] = trd[0]
-            x = (x - trd[0]) / (trd[1] - trd[0])
+            #x = (x - trd[0]) / (trd[1] - trd[0])
+            x = (x - x.min()) / (x.max() - x.min())
         else:
             x = x / trd[1]
     else:
         x = x / x.max()
+
     x = (x - 0.5) * 2
+
+    print(x.min(), x.max())
     return x
 
 
 def reslice_3d_to_2d_for_visualize(destination, subjects, suffix, png=False, upsample=None, fill_blank=False, trd=None):
     os.makedirs(destination + 'zy' + suffix, exist_ok=True)
     os.makedirs(destination + 'zx' + suffix, exist_ok=True)
-    os.makedirs(destination + 'xy' + suffix, exist_ok=True)
+    #os.makedirs(destination + 'xy' + suffix, exist_ok=True)
 
     for i in tqdm(range(len(subjects))):
         x0 = tiff.imread(subjects[i])  # (Z, X, Y)
@@ -323,12 +336,12 @@ def reslice_3d_to_2d_for_visualize(destination, subjects, suffix, png=False, ups
             else:
                 out = Image.fromarray(to_8bit(np.transpose(x0[:, :, y], (1, 0))))
                 out.save(destination + 'zx' + suffix + filename + '_' + str(y).zfill(3) + '.png')
-        for z in range(x0.shape[0]):
-            if not png:
-                tiff.imwrite(destination + 'xy' + suffix + filename + '_' + str(z).zfill(3) + '.tif', x0[z, :, :])
-            else:
-                out = Image.fromarray(to_8bit(x0[z, :, :]))
-                out.save(destination + 'xy' + suffix + filename + '_' + str(z).zfill(3) + '.png')
+        #for z in range(x0.shape[0]):
+        #    if not png:
+        #        tiff.imwrite(destination + 'xy' + suffix + filename + '_' + str(z).zfill(3) + '.tif', x0[z, :, :])
+        #    else:
+        #        out = Image.fromarray(to_8bit(x0[z, :, :]))
+        #        out.save(destination + 'xy' + suffix + filename + '_' + str(z).zfill(3) + '.png')
 
 
 def read_out_2d(ddpm_source='/media/ExtHDD01/oai_diffusion_interpolated/original/diff0506/'):
@@ -347,11 +360,11 @@ def read_out_2d(ddpm_source='/media/ExtHDD01/oai_diffusion_interpolated/original
 def get_model():
     if args.epoch == 'last':
         last_epoch = \
-        sorted(glob.glob('/media/ExtHDD01/logs/womac4' + args.prj + 'checkpoints/net_g_model_epoch_*.pth'))[-1]
+        sorted(glob.glob(log_root + 'womac4' + args.prj + 'checkpoints/net_g_model_epoch_*.pth'))[-1]
         print(last_epoch)
         net = torch.load(last_epoch, map_location=torch.device('cpu'))
     else:
-        model_name = '/media/ExtHDD01/logs/womac4' + args.prj + 'checkpoints/net_g_model_epoch_' + str(
+        model_name = log_root + 'womac4' + args.prj + 'checkpoints/net_g_model_epoch_' + str(
             args.epoch) + '.pth'
         print(model_name)
         net = torch.load(model_name, map_location=torch.device('cpu'))
@@ -364,6 +377,15 @@ def get_model():
     return net
 
 
+def test_once(x0, net):
+    if args.gpu:
+        x0 = x0.cuda()
+    #out_all = (net(x0)['out0'] + torch.flip(net(torch.flip(x0, [4]))['out0'], [4])) / 2
+    out_all = net(x0)['out0']
+    out_all = out_all.detach().cpu()
+    out_all = out_all[0, 0, :, :, :].numpy()
+    out_all = np.transpose(out_all, (2, 0, 1))
+    return out_all
 
 
 if __name__ == "__main__":
@@ -400,6 +422,9 @@ if __name__ == "__main__":
                                 default='0,5', help='testing subject range')
             parser.add_argument('--suffix', type=str, default='a3d/')
             parser.add_argument('--out_dir', type=str, default='test/')
+            parser.add_argument('--print_a2d', type=lambda x: (str(x).lower() == 'true'), default=False)
+            parser.add_argument('--root', type=str)
+            parser.add_argument('--log_root', type=str)
 
             return parser.parse_args(args)
 
@@ -425,20 +450,140 @@ if __name__ == "__main__":
     args = load_config()
     print(args)
 
-    # Load model
-    net = get_model()
+    if 1:
+        root = args.root
+        log_root = args.log_root
 
-    # output root
-    root = '/media/ExtHDD01/oai_diffusion_interpolated/'
-    our_dir = args.out_dir
-    os.makedirs(root + our_dir, exist_ok=True)
+        # Load model
+        net = get_model()
 
-    source = '/media/ExtHDD01/oai_diffusion_interpolated/original/' + args.raw_source
-    IsoLesion_interpolate(destination=root + our_dir + 'a3d/',
-                          subjects=sorted(glob.glob(source + '*'))[args.irange[0]:args.irange[1]],
-                          net=net, to_upsample=args.to_upsample, mirror_padding=args.mirror_padding,
-                          trd=args.raw_trd, z_pad=args.z_pad)
-    reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                   subjects=sorted(glob.glob(root + our_dir + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
-                                   # subjects=sorted(glob.glob(root + 'redo500/' + 'a3d/' + '*'))[:],
-                                   suffix=args.suffix, fill_blank=False, trd=(-1, 1))
+        # output root
+        our_dir = args.out_dir
+        os.makedirs(root + our_dir, exist_ok=True)
+
+        source = root + 'original/' + args.raw_source
+        IsoLesion_interpolate(destination=root + our_dir + 'a3d/',
+                              subjects=sorted(glob.glob(source + '*'))[args.irange[0]:args.irange[1]],
+                              net=net, to_upsample=args.to_upsample, mirror_padding=args.mirror_padding,
+                              trd=args.raw_trd, z_pad=args.z_pad)
+        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                       subjects=sorted(glob.glob(root + our_dir + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
+                                       suffix=args.suffix, fill_blank=False, trd=(-1, 1))
+        if args.print_a2d:
+            reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                       subjects=sorted(glob.glob(root + 'original/' + args.raw_source + '*'))[args.irange[0]:args.irange[1]],
+                                       suffix='a2d/', fill_blank=False, trd=None, upsample=8)
+
+    if 0:
+        def encode(x0, net):
+            if args.gpu:
+                x0 = x0.cuda()
+            z = net(x0, method='encode')
+            for i in range(len(z)):
+                z[i] = z[i].detach().cpu()
+            return z
+
+        def decode(z, net):
+            if args.gpu:
+                for i in range(len(z)):
+                    z[i] = z[i].cuda()
+            x = net(z, method='decode')['out0']
+            out_all = x.detach().cpu()
+            out_all = out_all[0, 0, :, :, :].numpy()
+            out_all = np.transpose(out_all, (2, 0, 1))
+            for i in range(len(z)):
+                z[i] = z[i].detach().cpu()
+            return out_all
+
+
+        def get_weight(size, C=16, position='middle'):
+            # the linearly tapering weight to combine al the individual ROI
+            weight = np.ones(size)
+            if position != 'begin':
+                weight[:C, :, :] = np.expand_dims(np.expand_dims(np.linspace(0, 1, C), 1), 2)
+            weight[-C:, :, :] = np.expand_dims(np.expand_dims(np.linspace(1, 0, C), 1), 2)
+            return weight
+
+
+        trd = (0, 800)
+        x0 = tiff.imread('/media/ExtHDD01/oai_diffusion_interpolated/original/selected/9031426_01_RIGHT.tif')
+        net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet3d/unet3d/checkpoints/net_g_model_epoch_160.pth',
+                        map_location=torch.device('cpu'))#.eval()
+        #net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/redounet/checkpoints/net_g_model_epoch_100.pth',
+        #                 map_location=torch.device('cpu')).eval()
+
+        args.gpu = True
+        net = net.cuda()#.eval()
+
+        x0 = norm_11(x0, trd)
+        x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float().permute(0, 1, 3, 4, 2)  # (B, C, H, W, D)
+
+        #x0 = torch.flip(x0, [4])
+
+        #up = torch.nn.Upsample(size=(x0.shape[2], x0.shape[3], x0.shape[4] * 8), mode='trilinear')
+        #xup = up(x0)
+
+        #up2d = torch.nn.Upsample(size=(x0.shape[3], x0.shape[4] * 8), mode='bicubic')
+        #xup = up2d(x0.squeeze().unsqueeze(1)).permute(1, 0, 2, 3).unsqueeze(0).float()
+
+        up2d = torch.nn.Upsample(size=(x0.shape[2], x0.shape[4] * 8), mode='bilinear')
+        xup = up2d(x0.permute(3, 0, 2, 4, 1)[:, :, :, :, 0]).permute(1, 2, 0, 3).unsqueeze(0).float()
+
+        xup = xup[:, :, 64:-64, :, :]
+
+        #out_all = []
+        #for mc in range(3):
+        #    out_all.append(decode(encode(xup, net), net))
+        #xupx = np.mean(np.stack(out_all, 0), 0)
+        #tiff.imwrite('temp.tif', np.transpose(xupx, (1, 2, 0)))
+
+        if 1:
+            stacks = []
+            last_z = None
+            last_img = None
+
+            for iz in range(0, xup.shape[4]-16*6, 16*3):
+                #out = test_once(xup[:, :, :, :, iz:iz+64], net)
+
+                patch = xup[:, :, :, :, iz:iz+16*6]
+
+                mirror_padding = 16
+                if mirror_padding > 0:
+                    padL = patch[:, :, :, :, :mirror_padding]
+                    padR = patch[:, :, :, :, -mirror_padding:]
+                    patch = torch.cat([torch.flip(padL, [4]), patch, torch.flip(padR, [4])], 4)
+
+                out_all = []
+                for mc in range(1):
+                    z = encode(patch, net)
+
+                    #zflip = encode(torch.flip(patch, [4]), net)
+                    #for i in range(len(z)):
+                    #    z[i] = (z[i] + torch.flip(zflip[i], [4])) / 2
+
+                    #if last_z is not None:
+                    #    for i in range(len(z)):
+                    #        overlap = z[i].shape[4] // 2
+                    #        z[i][:,:,:,:, :overlap] = (z[i][:,:,:,:, :overlap] + last_z[i][:,:,:,:, -overlap:]) / 2
+                    last_z = z
+                    out = decode(z, net)
+                    out_all.append(out)
+                out = np.mean(np.stack(out_all, 0), 0)
+
+                print(out.shape)
+                out = out[mirror_padding+16:-(mirror_padding+16), :, :]
+
+                w = get_weight(size=(64, 256, 384), C=16, position='middle')
+                out = np.multiply(out, w)
+
+                if last_img is not None:
+                    overlap = out.shape[0] // 4
+                    print(overlap)
+                    out[:overlap] = (out[:overlap, :, :] + last_img[-overlap:, :, :])
+
+                last_img = out
+
+                stacks.append(out[:48, :, :])
+            combine = np.concatenate(stacks, 0)
+            tiff.imwrite('temp.tif', np.transpose(combine, (1, 2, 0)))
+

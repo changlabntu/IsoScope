@@ -38,21 +38,21 @@ class GAN(BaseModel):
         self.embed_dim = hparams.embed_dim
 
         # Initialize loss
-        self.loss = instantiate_from_config(config['model']['params']["lossconfig"])
+        lossconfig = config['model']['params']["lossconfig"]
+        self.loss = instantiate_from_config()
         self.discriminator = self.loss.discriminator
 
         # Save model names
         self.netg_names = {'encoder': 'encoder', 'decoder': 'decoder',
-                           'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv',
-                           'net_g': 'net_g'}
+                           'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv'}
         self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d'}
 
         # Configure optimizers
         self.configure_optimizers()
 
         #self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
-        self.uprate = (hparams.cropsize // hparams.cropz)
-        print('uprate: ' + str(self.uprate))
+        #self.uprate = (hparams.cropsize // hparams.cropz)
+        #print('uprate: ' + str(self.uprate))
 
         #lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         #if opt.scale_lr:
@@ -63,7 +63,7 @@ class GAN(BaseModel):
         parser = parent_parser.add_argument_group("AutoencoderKL")
         parser.add_argument("--embed_dim", type=int, default=4)
         parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
-        parser.add_argument("--skipl1", type=int, default=4)
+        #parser.add_argument("--skipl1", type=int, default=4)
         #parswr.add_argument("--ddconfig", type=str)
         return parent_parser
 
@@ -94,26 +94,6 @@ class GAN(BaseModel):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def adv_loss_six_way(self, x, net_d, truth):
-        loss = 0
-        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                       net_d=net_d, truth=truth)
-        loss = loss / 6
-        return loss
-
-    def get_xy_plane(self, x):
-        return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]
-
     def generation(self, batch):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
@@ -124,25 +104,10 @@ class GAN(BaseModel):
         #self.input = self.get_input(batch, self.hparams.image_key)
         # AE
         self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
-        # hbranch (1, 256, 8, 8)
-        #print(hbranch.shape)
-        # IsoGAN
-        hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
-        self.XupX = self.net_g(hbranch, method='decode')['out0']
 
     def backward_g(self):
         loss_g = 0
         loss_dict = {}
-
-        axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
-        loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.uprate * self.hparams.skipl1],
-                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
-
-        loss_dict['axx'] = axx
-        loss_g += axx
-        loss_dict['l1'] = loss_l1
-        loss_g += loss_l1
-
         # ae
         aeloss, log_dict_ae = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
                                         self.reconstructions, self.posterior, 0, self.global_step,
@@ -155,14 +120,6 @@ class GAN(BaseModel):
     def backward_d(self):
         loss_d = 0
         loss_dict = {}
-
-        dxx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=False)
-        # ADV(X)+
-        dx = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_d, truth=True)
-
-        loss_dict['dxx_x'] = dxx + dx
-        loss_d += dxx + dx
-
         # ae
         discloss, log_dict_disc = self.loss(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],
                                             self.reconstructions, self.posterior, 1, self.global_step,

@@ -1,6 +1,5 @@
 Fly0B:
   dataset: "Fly0B"
-  trd: 2000
   prj: "/IsoScopeXXcut/ngf32lb10/"
   epoch: 5000
   uprate: 6
@@ -13,8 +12,21 @@ Fly0B:
     end_dim1: null
     start_dim2: 0
     end_dim2: 384
-  image_path: "/media/ExtHDD01/Dataset/paired_images/Fly0B/xyori.tif"
-  norm_method: "01"
+  image_path: ["/media/ExtHDD01/Dataset/paired_images/Fly0B/xyori.tif",]
+  norm_method: ["11"]
+  exp_trd: [None, ]
+  exp_ftr: [None, ]
+  trd: [[None, 2000], ]
+  assemble: True
+  assemble_params:
+    C: 64 # cropped pixels
+    dx_shape: [ 60, 128, 384 ] # inference size
+    weight_shape: [ 256, 128, 256]
+    weight_method: "cross"
+    zrange: [96, 225, 32]
+    xrange: [448, 449, 1]
+    #yrange: [0, 1537, 192]
+    yrange: [384, 768, 192]
 
 BraTSReg:
   dataset: "BraTSReg"
@@ -118,7 +130,6 @@ aisr081424:
 
 Dayu1:
   dataset: "Dayu1"
-  trd: 424
   prj: "/IsoScopeXYftr0/ngf32ndf32lb10skip4exp0nocycunet/"
   epoch: 1000
   upsample_params:
@@ -130,10 +141,15 @@ Dayu1:
     end_dim1: 486
     start_dim2: 384
     end_dim2: 640
-  image_path: "/media/ExtHDD01/Dataset/paired_images/Dayu1/xyori.tif"
-  norm_method: "exp"
-  exp_trd: [100, 424]
-  exp_ftr: 6
+  #image_path: ["/media/ExtHDD01/Dataset/paired_images/Dayu1/xyori.tif"]
+  #norm_method: ["exp"]
+  #exp_trd: [[100, 424]]
+  #exp_ftr: [6]
+  image_path: [ "/media/ExtHDD01/Dataset/paired_images/DPM4X/ori/3-2ROI000.tif" ]
+  norm_method: [ "exp", "11" ]
+  exp_trd: [ [ 100, 424 ], None ]
+  exp_ftr: [ 6, None ]
+  trd: [ None, 4 ]
   assemble: True
   assemble_params:
     C: 64 # cropped pixels
@@ -148,7 +164,7 @@ Dayu1:
     yrange_start: 0
     yrange_end: -2
 
-DPM4X:
+DPM4Xtc:
   dataset: "DPM4X"
   prj: "/IsoScopeXYtc/unetx2/"
   epoch: 1000
@@ -167,6 +183,41 @@ DPM4X:
   exp_ftr: [6, None]
   trd: [None, 4]
   assemble: True
+  assemble_params:
+    C: 64 # cropped pixels
+    dx_shape: [40, 128, 256] # inference size
+    sx_shape: [20, 128, 128] # step size
+    weight_shape: [ 128, 128, 128 ]
+    weight_method: "cross"
+    zrange_start: 4
+    zrange_end: -1
+    xrange_start: 3
+    xrange_end: 4
+    yrange_start: 0
+    yrange_end: -2
+
+DPM4X:
+  dataset: "DPM4X"
+  #prj: "/IsoScopeXYprj/8X/"
+  #prj: "/IsoScopeXYftr0/check/"
+  prj: "/IsoScopeXYftr0/ngf32ndf32lb10skip4exp0nocyc/"
+  #prj: "/IsoScopeXYftr0/checkftr0/"
+  epoch: 2000
+  upsample_params:
+    size: [256, 128, 256]
+  patch_range:
+    start_dim0: 168
+    end_dim0: 208
+    start_dim1: 230
+    end_dim1: 486
+    start_dim2: 384
+    end_dim2: 640
+  image_path: ["/media/ExtHDD01/Dataset/paired_images/DPM4X/ori/3-2ROI000.tif"]
+  norm_method: ["exp", "11"]
+  exp_trd: [[100, 424], None]
+  exp_ftr: [6, None]
+  trd: [None, None]
+  assemble: False
   assemble_params:
     C: 64 # cropped pixels
     dx_shape: [40, 128, 256] # inference size

@@ -62,7 +62,7 @@ def get_args():
                         help='save checkpoints of discriminators')
 
     # Loss
-    parser.add_argument('--lamb', type=int, help='weight on L1 term in objective')
+    parser.add_argument('--lamb', type=float, help='weight on L1 term in objective')
     # Misc
     parser.add_argument('--seed', type=int, help='random seed to use. Default=123')
     parser.add_argument('--mode', type=str, default='dummy')
