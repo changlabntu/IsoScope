@@ -23,8 +23,6 @@ ACTIVATION = nn.ReLU
 #device = 'cuda'
 
 
-
-
 class Flatten(torch.nn.Module):
     def forward(self, x):
         return x.reshape(x.size()[0], -1)
@@ -170,16 +168,16 @@ class Generator(nn.Module):
             conv3_block(4 * nf, 4 * nf, activation=act, norm=norm_type),
 
         )
-        self.down3 = nn.Sequential(
-            conv3_block(4 * nf, 8 * nf, activation=act, norm=norm_type),
-            nn.Dropout(p=dropout, inplace=False),
-            conv3_block(8 * nf, 8 * nf, activation=act, norm=norm_type),
-        )
+        #self.down3 = nn.Sequential(
+        #    conv3_block(4 * nf, 8 * nf, activation=act, norm=norm_type),
+        #    nn.Dropout(p=dropout, inplace=False),
+        #    conv3_block(8 * nf, 8 * nf, activation=act, norm=norm_type),
+        #)
 
-        self.up3 = deconv3d_bn_block(8 * nf, 4 * nf, activation=act, norm=norm_type)
+        #self.up3 = deconv3d_bn_block(8 * nf, 4 * nf, activation=act, norm=norm_type)
 
         self.conv5 = nn.Sequential(
-            conv3_block(8 * nf, 4 * nf, activation=act, norm=norm_type),  # 8
+            conv3_block(4 * nf, 4 * nf, activation=act, norm=norm_type),  # 8
             nn.Dropout(p=dropout, inplace=False),
             conv3_block(4 * nf, 4 * nf, activation=act, norm=norm_type),
         )
@@ -210,11 +208,10 @@ class Generator(nn.Module):
     def forward(self, x, method=None):
         # x (1, C, X, Y, Z)
         if method != 'decode':
-
             # skip
             xdown = x[:, :, :, :, 4::8]
             skip = self.skip(xdown.permute(2, 1, 4, 3, 0).squeeze(4))  # (X, C, Z, Y)
-            skip = skip.permute(1, 0, 3, 2).unsqueeze(0)#.detach()
+            skip = skip.permute(1, 0, 3, 2).unsqueeze(0) #.detach()
 
             #x = x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
             feat = []
@@ -233,15 +230,9 @@ class Generator(nn.Module):
         if method == 'decode':
             feat = x
 
-        [x0, x1, x2, x3, skip] = feat
+        [x0, x1, x2, skip] = feat
 
-        xu3 = self.up3(x3)
-        # alpha
-        x2 = alpha * x2 + (
-                    1 - alpha) * xu3  # alpha means the features from the encoder are connecting, or it is replaced by the features from the decoder
-        xu3_ = xu3  # .detach()
-        cat3 = torch.cat([xu3_, x2], 1)
-        x5 = self.conv5(cat3)  # Dropout
+        x5 = self.conv5(x2)  # Dropout
         xu2 = self.up2(x5)
         # alpha
         x1 = alpha * x1 + (1 - alpha) * xu2

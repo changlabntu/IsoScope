@@ -4,11 +4,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from contextlib import contextmanager
 
-from ldm.modules.diffusionmodules.model import Encoder, Decoder
+from ldm.modules.diffusionmodules.modelcut import Encoder, Decoder
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 from ldm.util import instantiate_from_config
 import yaml
 import numpy as np
+from models.IsoScopeXXcyc0cut import PatchSampleF3D
+from networks.networks_cut import Normalize, init_net, PatchNCELoss
 
 
 class GAN(BaseModel):
@@ -32,9 +34,7 @@ class GAN(BaseModel):
         if self.hparams.tc:
             self.hparams.input_nc = 1  # this would not be used
             self.hparams.output_nc = 2
-        self.net_g, self.net_dx = self.set_networks()
-        _, self.net_dy = self.set_networks()
-        _, self.net_dz = self.set_networks()
+        self.net_g, self.net_d = self.set_networks()
 
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
@@ -52,18 +52,37 @@ class GAN(BaseModel):
         self.netg_names = {'encoder': 'encoder', 'decoder': 'decoder',
                            'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv',
                            'net_g': 'net_g'}
-        self.netd_names = {'discriminator': 'discriminator', 'net_dx': 'net_dx', 'net_dy': 'net_dy', 'net_dz': 'net_dz'}
+        self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d'}
 
         # Configure optimizers
         self.configure_optimizers()
 
-        #self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
+        self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
         self.uprate = (hparams.cropsize // hparams.cropz)
         print('uprate: ' + str(self.uprate))
 
         #lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         #if opt.scale_lr:
         #    model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr  = 2 * 6 * 16 * 4.5e-6
+
+        # CUT NCE
+        if not self.hparams.nocut:
+            netF = PatchSampleF3D(use_mlp=self.hparams.use_mlp, init_type='normal', init_gain=0.02, gpu_ids=[],
+                                  nc=self.hparams.c_mlp)
+            self.netF = init_net(netF, init_type='normal', init_gain=0.02, gpu_ids=[])
+            feature_shapes = [64, 128, 128, 256]
+            self.netF.create_mlp(feature_shapes)
+
+            if self.hparams.fWhich == None:  # which layer of the feature map to be considered in CUT
+                self.hparams.fWhich = [1 for i in range(len(feature_shapes))]
+
+            print(self.hparams.fWhich)
+
+            self.criterionNCE = []
+            for nce_layer in range(len(feature_shapes)):  # self.nce_layers:
+                self.criterionNCE.append(PatchNCELoss(opt=hparams))  # .to(self.device))
+
+            self.netg_names['netF'] = 'netF'
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -74,15 +93,26 @@ class GAN(BaseModel):
         parser.add_argument("--hbranch", type=str, default='mid')
         parser.add_argument("--tc", action="store_true", default=False)
         parser.add_argument("--l1how", type=str, default='dsp')
-        parser.add_argument("--advhow", type=str, default=None)
         #parswr.add_argument("--ddconfig", type=str)
+        parser.add_argument("--nocut", action='store_true')
+        parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
+        parser.add_argument('--lbNCE', type=float, default=1.0, help='weight for NCE loss: NCE(G(X), X)')
+        parser.add_argument('--nce_includes_all_negatives_from_minibatch',
+                            type=bool, nargs='?', const=True, default=False,
+                            help='(used for single image translation) If True, include the negatives from the other samples of the minibatch when computing the contrastive loss. Please see models/patchnce.py for more details.')
+        parser.add_argument('--nce_T', type=float, default=0.07, help='temperature for NCE loss')
+        parser.add_argument('--use_mlp', action='store_true')
+        parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
+        parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
         return parent_parser
 
     def encode(self, x):
-        h, hbranch = self.encoder(x)
+        h, hbranch, hz = self.encoder(x)
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
-        return posterior, hbranch
+        hz = hz[1::2]  # every other two layer  (Z, C, X, Y)
+        hz = [x.permute(1, 2, 3, 0).unsqueeze(0) for x in hz]
+        return posterior, hbranch, hz
 
     def decode(self, z):
         z = self.post_quant_conv(z)
@@ -90,7 +120,7 @@ class GAN(BaseModel):
         return dec
 
     def forward(self, input, sample_posterior=True):
-        posterior, hbranch = self.encode(input)
+        posterior, hbranch, _ = self.encode(input)
         if sample_posterior:
             z = posterior.sample()
         else:
@@ -105,41 +135,21 @@ class GAN(BaseModel):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def get_projection_adv(self, x, depth=8, how=None):
-        if how == None:
-            return x
-        elif how == 'max':
-            x = x.permute(1, 2, 3, 0)
-            x = x.unfold(-1, depth, depth)
-            x, _ = x.max(dim=-1)
-            x = x.permute(3, 0, 1, 2)
-            return x
-
-    def adv_loss_x(self, x, truth):
-        # self.get_projection(self.XupX, depth=8, how=self.hparams.l1how)
-        # x: (B, C, X, Y, Z) > (B, C, X, Y, Z//8, 8)
-
+    def adv_loss_six_way(self, x, net_d, truth):
         loss = 0
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, Z, X)
-                                  net_d=self.net_dx, truth=truth)
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (Y, C, X, Z)
-                                  net_d=self.net_dx, truth=truth)
-        return loss
-
-    def adv_loss_y(self, x, truth):
-        loss = 0
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Z, Y)
-                                  net_d=self.net_dy, truth=truth)
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0], how=self.hparams.advhow),  # (X, C, Y, Z)
-                                  net_d=self.net_dy, truth=truth)
-        return loss
-
-    def adv_loss_z(self, x, truth):
-        loss = 0
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]),  # (Z, C, X, Y)
-                                  net_d=self.net_dz, truth=truth)
-        loss += self.add_loss_adv(a=self.get_projection_adv(x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0]),  # (Z, C, Y, X)
-                                  net_d=self.net_dz, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
+                                       net_d=net_d, truth=truth)
+        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
+                                       net_d=net_d, truth=truth)
+        loss = loss / 6
         return loss
 
     def get_xy_plane(self, x):
@@ -159,15 +169,19 @@ class GAN(BaseModel):
 
         #self.input = self.get_input(batch, self.hparams.image_key)
         # AE
-        self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
+        self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])  # (Z, C, X, Y)
 
         if self.hparams.hbranch == 'z':
             hbranch = self.posterior.sample()
             hbranch = self.decoder.conv_in(hbranch)
 
-        # IsoGAN
-        hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)
+        hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
         self.XupX = self.net_g(hbranch, method='decode')['out0']
+
+        self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
+
+        if not self.hparams.nocut:
+            self.goutz = hbranch
 
     def get_projection(self, x, depth, how='dsp'):
         if how == 'dsp':
@@ -184,28 +198,18 @@ class GAN(BaseModel):
         loss_g = 0
         loss_dict = {}
 
-        ax = self.adv_loss_x(self.XupX, truth=True)
-        ay = self.adv_loss_y(self.XupX, truth=True)
-        az = self.adv_loss_z(self.XupX, truth=True)
-        loss_dict['ax'] = ax
-        loss_g += ax * 0.5
-        loss_dict['ay'] = ay
-        loss_g += ay * 0.5
-        loss_dict['az'] = az
-        loss_g += az * 0.5
-
+        axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
         if self.hparams.tc:
-            #loss_l1 = self.add_loss_l1(a=self.XupX[:, :1, :, :, ::self.uprate * self.hparams.skipl1],
-            #                           b=self.oriX[:, :1, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
-            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX[:, :1, :, :, :], depth=8, how=self.hparams.l1how),
-                                       b=self.oriX[:, :1, :, :, ::self.hparams.skipl1])
+            loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, (self.uprate//2)::self.uprate * self.hparams.skipl1],
+                                       b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
         else:
-            #loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, ::self.uprate * self.hparams.skipl1],
-            #                           b=self.oriX[:, :, :, :, ::self.hparams.skipl1]) * self.hparams.lamb
-            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=8, how=self.hparams.l1how),
-                                       b=self.oriX[:, :, :, :, :])
+            loss_l1 = self.add_loss_l1(a=self.XupX[:, :, :, :, (self.uprate//2)::self.uprate * self.hparams.skipl1],
+                                       b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
+
+        loss_dict['axx'] = axx
+        loss_g += axx
         loss_dict['l1'] = loss_l1
-        loss_g += loss_l1
+        loss_g += loss_l1 * self.hparams.lamb
 
         oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
         if self.hparams.tc:
@@ -217,33 +221,43 @@ class GAN(BaseModel):
                                         last_layer=self.get_last_layer(), split="train")
         loss_g += aeloss
 
+        # CUT
+        if not self.hparams.nocut:
+            # feat q
+
+            posterior, hbranch, hz = self.encode(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
+            feat_q = hz
+
+            # feat k
+            posterior, hbranch, hz = self.encode(self.XupX.permute(4, 1, 2, 3, 0)[4::8, :, :, :, 0])  # (Z, C, X, Y)
+            feat_k = hz
+
+            feat_k_pool, sample_ids = self.netF(feat_k, self.hparams.num_patches,
+                                                None)  # get source patches by random id
+            feat_q_pool, _ = self.netF(feat_q, self.hparams.num_patches, sample_ids)  # use the ids for query target
+
+            total_nce_loss = 0.0
+            for f_q, f_k, crit, f_w in zip(feat_q_pool, feat_k_pool, self.criterionNCE, self.hparams.fWhich):
+                loss = crit(f_q, f_k) * f_w
+                total_nce_loss += loss.mean()
+            loss_nce = total_nce_loss / 4
+            loss_dict['nce'] = loss_nce
+            loss_g += loss_nce * self.hparams.lbNCE
+
         loss_dict['sum'] = loss_g
+
         return loss_dict
 
     def backward_d(self):
         loss_d = 0
         loss_dict = {}
 
-        dxF = self.adv_loss_x(self.XupX, truth=False)
-        dyF = self.adv_loss_y(self.XupX, truth=False)
-        dzF = self.adv_loss_z(self.XupX, truth=False)
-        loss_dict['dxF'] = dxF
-        loss_d += dxF * 0.5
-        loss_dict['dyF'] = dyF
-        loss_d += dyF * 0.5
-        loss_dict['dzF'] = dzF
-        loss_d += dzF * 0.5
-
+        dxx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=False)
         # ADV(X)+
-        dxT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dx, truth=True)
-        dyT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dy, truth=True)
-        dzT = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_dz, truth=True)
-        loss_dict['dxT'] = dxT
-        loss_d += dxT * 0.5
-        loss_dict['dyT'] = dyT
-        loss_d += dyT * 0.5
-        loss_dict['dzT'] = dzT
-        loss_d += dzT * 0.5
+        dx = self.add_loss_adv(a=self.get_xy_plane(self.oriX), net_d=self.net_d, truth=True)
+
+        loss_dict['dxx_x'] = dxx + dx
+        loss_d += dxx + dx
 
         oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
         if self.hparams.tc:

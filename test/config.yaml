@@ -25,8 +25,8 @@ Fly0B:
     weight_method: "cross"
     zrange: [96, 225, 32]
     xrange: [448, 449, 1]
-    #yrange: [0, 1537, 192]
-    yrange: [384, 768, 192]
+    yrange: [0, 1537, 192]
+    #yrange: [384, 768, 192]
 
 BraTSReg:
   dataset: "BraTSReg"

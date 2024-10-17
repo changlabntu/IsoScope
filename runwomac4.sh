@@ -12,4 +12,6 @@
 ## womac4 ae
 #CUDA_VISIBLE_DEVICES=0,1,2,3,4,5 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj ae/cyc0 --ldmyaml ldmaex2 --netG none --lamb 1 --lr 8.64e-4 --models ae0iso0cyc --nocut --cropz 16 --cropsize 128 --env brcb --adv 1 --rotate --ngf 32 --ndf 32 --direction a --nm 11 --dataset womac4 --epoch_save 20 --n_epochs 5000 --lr_policy cosine
 
-CUDA_VISIBLE_DEVICES=1 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj IsoScopeXX/unet3d/unet3dres --models IsoScopeXXcyc0cut --cropz 16 --cropsize 128 --env t09 --adv 1 --rotate --ngf 32 --direction a --nm 11 --netG ed023eunet3dres --dataset womac4 --n_epochs 2000 --lr_policy cosine --mc --uprate 8 --lamb 1 --nocut --skipl1 4 --ndf 32
+
+# a6k
+CUDA_VISIBLE_DEVICES=0,1,2,3 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj IsoMRIclean/gd1331/ --models IsoMRIclean --cropz 16 --cropsize 128 --env a6k --adv 1 --rotate --ngf 32 --direction ap --nm 11 --netG ed023eunet3dres --dataset womac4 --n_epochs 2000 --lr_policy cosine --mc --uprate 8 --lamb 1 --nocut --skipl1 4 --ndf 32

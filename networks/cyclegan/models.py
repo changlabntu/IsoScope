@@ -99,9 +99,6 @@ class Discriminator(nn.Module):
         print('Use ' + str(patch) + ' patch discriminator')
         channels, height, width = input_shape
 
-        # Calculate output shape of image discriminator (PatchGAN)
-        # this means no shit
-
         def discriminator_block(in_filters, out_filters, normalize=True):
             """Returns downsampling layers of each discriminator block"""
             layers = [nn.Conv2d(in_filters, out_filters, 4, stride=2, padding=1)]

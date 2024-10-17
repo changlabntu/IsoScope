@@ -316,7 +316,7 @@ class PairedCubes(PairedSlices):
         if self.index is not None:
             return len(self.index)
         else:
-            return len(self.subjects_keys)
+            return len(self.orders)
 
     def __getitem__(self, idx):
         if self.index is not None:
@@ -326,7 +326,7 @@ class PairedCubes(PairedSlices):
 
         # add all the slices into the dict
         filenames = []
-        slices = sorted(self.subjects[self.subjects_keys[index]])  # get all the slices of this subject
+        slices = sorted(self.subjects[self.orders[index]])  # get all the slices of this subject
         for i in range(len(self.all_path)):  # loop over all the paths
             slices_per_path = [join(self.all_path[i], x) for x in slices]
             filenames = filenames + slices_per_path
@@ -364,30 +364,22 @@ if __name__ == '__main__':
     parser.add_argument('--cropsize', type=int, default=0)
     parser.add_argument('--cropz', type=int, default=0)
     parser.add_argument('--trd', type=float, default=None)
+    parser.add_argument('--rotate', action='store_true')
     parser.add_argument('--mode', type=str, default='dummy')
     parser.add_argument('--port', type=str, default='dummy')
+    parser.add_argument('--host', type=str, default='dummy')
     opt = parser.parse_args()
 
-    root = os.environ.get('DATASET') + opt.dataset
+
+    root = '/media/ghc/Ghc_data3/Chu_full_brain/VMAT_DPM/Naive_VMAT_1/'
     opt.cropsize = 256
-    opt.nm = '11'
-    d1 = PairedData(root=root, path=opt.direction, opt=opt, mode='train', filenames=False)
-    x1 = d1.__getitem__(0)
+    opt.cropz = 32
+    opt.nm = '00'
+    opt.rotate = True
+    opt.direction = 'oripatch_maskpatch'
+    opt.rgb = False
+    opt.trd = 0
 
-    #d3 = PairedData3D(root=root, path='ap_bp_ap', opt=opt, mode='train', filenames=False)
-    #x3 = d3.__getitem__(0)
-
-    opt.load3d = True
-    d3x = MultiData(root=root, path='ap_bp_ap', opt=opt, mode='train', filenames=False)
-    x3x = d3x.__getitem__(0)
-
-    #d3d = Paired3DTif(root='/media/ExtHDD01/Dataset/paired_images/KL2min0V10/', path='a_b', opt=opt, mode='train',
-    #                  filenames=False)
-    #opt.cropz = 16
-    #x3d = d3d.__getitem__(0)
-
-    from torch.utils.data import DataLoader
-    train_loader = DataLoader(dataset=d3x, num_workers=4, batch_size=2, shuffle=True,
-                              pin_memory=True)
-    for i, x in enumerate(train_loader):
-        print(i)
+    d = PairedCubes(root=root, path=opt.direction, opt=opt, mode='train', filenames=False)
+    x = d.__getitem__(10)
+    imagesc(x['img'][0][0, :, :, 10])

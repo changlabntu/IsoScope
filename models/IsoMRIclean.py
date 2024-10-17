@@ -76,10 +76,15 @@ class GAN(BaseModel):
     def __init__(self, hparams, train_loader, eval_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
+        from networks.EncoderDecoder.edclean import Generator
         self.hparams.final = 'tanh'
-        self.net_g, self.net_d = self.set_networks()
+        self.net_g = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
+                               norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='1d', decode='3d')
+        _, self.net_d = self.set_networks()
         self.hparams.final = 'tanh'
-        self.net_gback, self.net_dzy = self.set_networks()
+        self.net_gback = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
+                               norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='3d', decode='1d')
+        _, self.net_dzy = self.set_networks()
         self.net_dzx = copy.deepcopy(self.net_dzy)
 
         # save model names

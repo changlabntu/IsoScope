@@ -27,15 +27,21 @@ elif 0:
 elif 0:
     prj_dirs = ['/IsoScopeXX/unet/redounet/']
     epoch_num = [100]
-elif 0:  # BEST!
+elif 1:  # BEST for now!
     prj_dirs = ['/IsoScopeXX/unet3d/unet3d/']
-    epoch_num = [60]#[160]
-elif 1:
+    epoch_num = [160]#[160]
+elif 0:
     prj_dirs = ['/IsoScopeXX/unet3d/nomc/']
     epoch_num = [40]#[160]
 elif 0:
-    prj_dirs = ['/IsoMRI/unet3d/unet3d/']
-    epoch_num = [60]
+    prj_dirs = ['/IsoScopeXX/unet3dres/lamb2lr05/']
+    epoch_num = [120]  # [160]
+elif 0:
+    prj_dirs = ['/IsoMRI/unet3dres/0skip4/']
+    epoch_num = [120]  # [160]
+elif 0:
+    prj_dirs = ['/IsoMRIclean/gd2332/']
+    epoch_num = [100]  # [160]
 
 eval = False
 
@@ -46,20 +52,20 @@ num_mc = 1
 
 root = '/media/ExtHDD01/oai_diffusion_interpolated/'
 log_root = '/media/ExtHDD01/logs/'
-raw_source = "a2d/"
-suffix = "a3d/"
+#raw_source = "a2d/"
+#suffix = "a3d/"
 #raw_source = "addpm2d0506/"
 #suffix = "addpm3d/"
-#raw_source = 'result0921/new/'
-#suffix = "new/"
+raw_source = 'diffresult0921/vanilla/'
+suffix = "vanilla/"
 #['3D', 'dualE-SPADE', 'vanilla', 'dualE']
 
-print_a2d = False
+print_a2d = True
 gpu = False
 stack_direction = None
 out_dir = None
 
-irange = "0,1"
+irange = "0,10"
 
 
 if eval:
@@ -136,5 +142,11 @@ for prj in prj_dirs:
             print("----------------------------------------")
 
 
-print("All runs completed.")
 
+def quick_rotate(xlist):
+    for x in xlist:
+        t = tiff.imread(x)
+        t = np.transpose(t, (2, 1, 0))
+        tiff.imwrite(x.replace('/xy/', '/zx/'), t)
+
+quick_rotate(sorted(glob.glob('/media/ExtHDD01/oai_diffusion_interpolated/smore/xy/*')))

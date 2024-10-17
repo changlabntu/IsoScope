@@ -25,10 +25,6 @@ def get_one_out(x0, model):
     else:
         out_all = model(x0[0])['out0'].cpu().detach()
 
-    # no gpu
-    #else:
-    #    out_all = model(x0)['out0'].cpu().detach()
-
     out_all = out_all.numpy()[0, 0, :, :, :]
     return out_all
 
@@ -45,7 +41,7 @@ def test_IsoScope(x0, model, **kwargs):
         print(patch[0].shape)
         patch0 = 1 * patch[0]
 
-        # extra downsampling z
+        # extra downsampling z for brain mri
         #patch[0] = patch[0][:, :, ::4, :, :]
         #print(patch[0].shape)
         #patch[0] = nn.Upsample(scale_factor=(0.125, 1, 1), mode='trilinear')(patch[0])
@@ -233,20 +229,6 @@ def norm_x0(x0, norm_method, exp_trd, exp_ftr, trd):
     return x0
 
 
-def main_assemble_volume(kwargs):
-    # assemble the volume
-    dz, dx, dy = kwargs['assemble_params']['dx_shape']
-    #sz, sx, sy = kwargs['assemble_params']['sx_shape']
-    w = get_weight(kwargs['assemble_params']['weight_shape'], method='cross', C=kwargs['assemble_params']['C'])
-    zrange = range(*kwargs['assemble_params']['zrange'])
-    xrange = range(*kwargs['assemble_params']['xrange'])
-    yrange = range(*kwargs['assemble_params']['yrange'])
-
-    recreate_volume_folder(destination + '/cycout/')  # DELETE and recreate the folder
-    test_over_volumne(kwargs, dx, dy, dz, zrange=zrange, xrange=xrange, yrange=yrange, destination=destination + '/cycout/')
-    assemble_microscopy_volumne(kwargs, w, zrange=zrange, xrange=xrange, yrange=yrange, source=destination + '/cycout/xy/')
-    assemble_microscopy_volumne(kwargs, w, zrange=zrange, xrange=xrange, yrange=yrange, source=destination + '/cycout/ori/')
-
 
 if __name__ == '__main__':
     option = "Fly0B"#"aisr081424"#'Dayu1'
@@ -294,22 +276,20 @@ if __name__ == '__main__':
         tiff.imwrite(destination + '/xy.tif', np.transpose(out, (1, 0, 2)))
 
     # assembly test
-    #if kwargs['assemble']:
-    #    main_assemble_volume(x0, kwargs)
+    if kwargs['assemble']:
+        dz, dx, dy = kwargs['assemble_params']['dx_shape']
+        #sz, sx, sy = kwargs['assemble_params']['sx_shape']
+        w = get_weight(kwargs['assemble_params']['weight_shape'], method='cross', C=kwargs['assemble_params']['C'])
+        zrange = range(*kwargs['assemble_params']['zrange'])
+        xrange = range(*kwargs['assemble_params']['xrange'])
+        yrange = range(*kwargs['assemble_params']['yrange'])
 
-    dz, dx, dy = kwargs['assemble_params']['dx_shape']
-    #sz, sx, sy = kwargs['assemble_params']['sx_shape']
-    w = get_weight(kwargs['assemble_params']['weight_shape'], method='cross', C=kwargs['assemble_params']['C'])
-    zrange = range(*kwargs['assemble_params']['zrange'])
-    xrange = range(*kwargs['assemble_params']['xrange'])
-    yrange = range(*kwargs['assemble_params']['yrange'])
+        recreate_volume_folder(destination + '/cycout/')  # DELETE and recreate the folder
+        test_over_volumne(kwargs, dx, dy, dz, zrange=zrange, xrange=xrange, yrange=yrange,
+                          destination=destination + '/cycout/')
 
-    recreate_volume_folder(destination + '/cycout/')  # DELETE and recreate the folder
-    test_over_volumne(kwargs, dx, dy, dz, zrange=zrange, xrange=xrange, yrange=yrange,
-                      destination=destination + '/cycout/')
-
-    assemble_microscopy_volumne(kwargs, w, zrange=zrange, xrange=xrange, yrange=yrange,
-                                source=destination + '/cycout/xy/')
+        assemble_microscopy_volumne(kwargs, w, zrange=zrange, xrange=xrange, yrange=yrange,
+                                    source=destination + '/cycout/xy/')
 
 
 

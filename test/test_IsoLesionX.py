@@ -145,88 +145,111 @@ def remove_last_after_underline(s):
 def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_padding=False, trd=None, z_pad=False):
     os.makedirs(destination, exist_ok=True)
     for i in tqdm(range(len(subjects))):
-        x0 = tiff.imread(subjects[i])
-        filename = subjects[i].split('/')[-1].split('.')[0]
 
+        aug_all = []
+        for aug in [2, 3]:#range(1):
+            x0 = tiff.imread(subjects[i])  # (Z, X, Y)
+            if aug == 1:
+                x0 = np.transpose(x0, (0, 2, 1))
+            elif aug == 2:
+                x0 = x0[:, ::-1, :]
+            elif aug == 3:
+                x0 = x0[:, :, ::-1]
+            filename = subjects[i].split('/')[-1].split('.')[0]
 
-        #x0 = tiff.imread('/media/ExtHDD01/oai_diffusion_interpolated/original/selected/9031426_01_RIGHT.tif')
-        #net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet3d/unet3d/checkpoints/net_g_model_epoch_100.pth', map_location=torch.device('cpu'))
+            x0 = norm_11(x0, trd)
+            x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float().permute(0, 1, 3, 4, 2)  # (B, C, H, W, D)
 
-        x0 = norm_11(x0, trd)
-        x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float().permute(0, 1, 3, 4, 2)  # (B, C, H, W, D)
-
-        if mirror_padding > 0:
-            #if to_upsample:
-            padL = x0[:, :, :, :, :mirror_padding]
-            padR = x0[:, :, :, :, -mirror_padding:]
-            #else:
-            #    padL = x0[:, :, :, :, :mirror_padding * 8]
-            #    padR = x0[:, :, :, :, -mirror_padding * 8:]
-            x0 = torch.cat((torch.flip(padL, [4]), x0, torch.flip(padR, [4])), 4)
-
-        x00 = 1 * x0
-
-        all = []
-        for mc in range(args.num_mc):
-
-            if to_upsample:
-                upsample = torch.nn.Upsample(size=(x00.shape[2], x00.shape[3], x00.shape[4] * 8), mode='trilinear')
-                rand_init = 0#np.random.randint(8)
-                print('rand_init', rand_init)
-                x0 = upsample(x00)
-                x0 = x0[:, :, :, :, rand_init::8]
-                x0 = upsample(x0)
-
-            print(x00.shape)
-            print(x0.shape)
-
-            stack_y = []
-            if z_pad:
-                # random shiftting
-                shift_L = np.random.randint(0, 16)  # z-direction random padding
-                shift_R = 16 - shift_L
-                shiftL = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_L))
-                shiftR = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_R))
-                x0pad = torch.cat((shiftL, x0, shiftR), 4)
-            else:
-                x0pad = x0
-
-            if args.stack_direction == 'y':
-                for iy in [0, 128, 256]:
-                    out = test_once(x0pad[:, :, :, iy:iy+128, :], net)
-                    stack_y.append(out)
-                combine = np.concatenate(stack_y, 2)
-            elif args.stack_direction == 'x':
-                for ix in [0, 128, 256]:
-                    out = test_once(x0pad[:, :, ix:ix+128, :, :], net)
-                    stack_y.append(out)
-                combine = np.concatenate(stack_y, 1)
-            elif args.stack_direction == 'z':
-                print(args.stack_direction)
-                for iz in [0, 128, 256]:
-                    out = test_once(x0pad[:, :, :, :, iz:iz+128], net)
-                    stack_y.append(out)
-                #combine = np.concatenate(stack_y, 2)
-            else:
-                out = test_once(x0pad, net)
-                combine = out
-
-            # remove shifting
-            if z_pad:
-                if to_upsample:
-                    combine = combine[shift_L:combine.shape[0] - shift_R, :, :]
-                else:
-                    combine = combine[shift_L*8:combine.shape[0] - shift_R*8, :, :]
-            # remove padding
             if mirror_padding > 0:
-                combine = combine[mirror_padding*8:-mirror_padding*8, :, :]
+                #if to_upsample:
+                padL = x0[:, :, :, :, :mirror_padding]
+                padR = x0[:, :, :, :, -mirror_padding:]
+                #else:
+                #    padL = x0[:, :, :, :, :mirror_padding * 8]
+                #    padR = x0[:, :, :, :, -mirror_padding * 8:]
+                x0 = torch.cat((torch.flip(padL, [4]), x0, torch.flip(padR, [4])), 4)
 
-            all.append(combine)
-        combine = np.stack(all, 3)
-        combine = np.mean(combine, 3)
-        #combine = all[-1]
+            x00 = 1 * x0
 
-        tiff.imwrite(destination + filename, combine)
+            all = []
+            for mc in range(args.num_mc):
+                if to_upsample:
+                    upsample = torch.nn.Upsample(size=(x00.shape[2], x00.shape[3], x00.shape[4] * 8), mode='trilinear')
+                    rand_init = 0#np.random.randint(8)
+                    print('rand_init', rand_init)
+                    x0 = upsample(x00)
+                    x0 = x0[:, :, :, :, rand_init::8]
+                    x0 = upsample(x0)
+
+                print(x00.shape)
+                print(x0.shape)
+
+                stack_y = []
+                if z_pad:
+                    # random shiftting
+                    shift_L = np.random.randint(0, 16)  # z-direction random padding
+                    shift_R = 16 - shift_L
+                    shiftL = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_L))
+                    shiftR = x0.mean() * torch.ones((x0.shape[0], x0.shape[1], x0.shape[2], x0.shape[3], shift_R))
+                    x0pad = torch.cat((shiftL, x0, shiftR), 4)
+                else:
+                    x0pad = x0
+
+                if args.stack_direction == 'y':
+                    for iy in [0, 128, 256]:
+                        out = test_once(x0pad[:, :, :, iy:iy+128, :], net)
+                        stack_y.append(out)
+                    combine = np.concatenate(stack_y, 2)
+                elif args.stack_direction == 'x':
+                    for ix in [0, 128, 256]:
+                        out = test_once(x0pad[:, :, ix:ix+128, :, :], net)
+                        stack_y.append(out)
+                    combine = np.concatenate(stack_y, 1)
+                elif args.stack_direction == 'z':
+                    print(args.stack_direction)
+                    for iz in [0, 128, 256]:
+                        out = test_once(x0pad[:, :, :, :, iz:iz+128], net)
+                        stack_y.append(out)
+                    #combine = np.concatenate(stack_y, 2)
+                else:
+                    out = test_once(x0pad, net)
+                    combine = out
+
+                # fix x0pad
+                x0pad = x0pad.squeeze().permute(2, 0, 1).numpy()
+
+                # remove shifting
+                if z_pad:
+                    D0 = combine.shape[0]
+                    if to_upsample:
+                        combine = combine[shift_L:D0 - shift_R, :, :]
+                        x0pad = x0pad[shift_L:D0 - shift_R, :, :]
+                    else:
+                        combine = combine[shift_L*8:D0 - shift_R*8, :, :]
+                        x0pad = x0pad[shift_L*8:D0 - shift_R*8, :, :]
+
+                # remove padding
+                if mirror_padding > 0:
+                    combine = combine[mirror_padding*8:-mirror_padding*8, :, :]
+                    x0pad = x0pad[mirror_padding*8:-mirror_padding*8, :, :]
+
+                all.append(combine)
+            combine = np.stack(all, 3)
+            combine = np.mean(combine, 3)
+            if aug == 1:
+                combine = np.transpose(combine, (0, 2, 1))
+                x0pad = np.transpose(x0pad, (0, 2, 1))
+            elif aug == 2:
+                combine = combine[:, ::-1, :]
+            elif aug == 3:
+                combine = combine[:, :, ::-1]
+
+            #combine = (combine + x0pad) / 2
+
+            aug_all.append(combine)
+        aug_all = np.stack(aug_all, 3)
+        aug_all = np.mean(aug_all, 3)
+        tiff.imwrite(destination + filename, aug_all)
 
 
 def calculate_difference(x_list, y_list, destination, mask_list=None):
