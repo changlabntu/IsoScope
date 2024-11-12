@@ -111,3 +111,24 @@ if __name__ == '__main__':
 
     # Examples of  Usage
     # CUDA_VISIBLE_DEVICES=3 python train.py --prj test --models lesion_cutGB_xbm --jsn intersubject --lbX 1 --cropsize 256 -b 1 --xbm --start_iter 0 --xbm_size 1000
+
+def quick_copy():
+    import glob
+    import tifffile as tiff
+    import numpy as np
+    root = '/media/ExtHDD01/oai_diffusion_interpolated/original/'
+    a2d = sorted(glob.glob(root + 'a2d/*.tif'))
+    add = sorted(glob.glob(root + 'addpm2d0504/*.tif'))
+    for i in range(len(a2d)):
+        a = tiff.imread(a2d[i])
+        b = tiff.imread(add[i])
+        (a, b) = (x - x.mean() for x in (a, b))
+        (a, b) = (x / x.std() for x in (a, b))
+        diff = a - b
+        diff[diff < 0] = 0
+        #diff = diff.astype(np.float32)
+        rgb = np.stack([b, b+diff, b], 3)
+        # turn to unit8
+        rgb = (rgb - rgb.min()) / (rgb.max() - rgb.min()) * 255
+        rgb = rgb.astype(np.uint8)
+        tiff.imsave(root + 'diff0504/' + a2d[i].split('/')[-1], rgb)

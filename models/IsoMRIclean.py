@@ -85,7 +85,11 @@ class GAN(BaseModel):
         self.net_gback = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
                                norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='3d', decode='1d')
         _, self.net_dzy = self.set_networks()
-        self.net_dzx = copy.deepcopy(self.net_dzy)
+
+        if self.hparams.fix_dis:
+            _, self.net_dzx = self.set_networks()
+        else:
+            self.net_dzx = copy.deepcopy(self.net_dzy)
 
         # save model names
         self.netg_names = {'net_g': 'net_g', 'net_gback': 'net_gback'}
@@ -96,10 +100,7 @@ class GAN(BaseModel):
         # Finally, initialize the optimizers and scheduler
         self.configure_optimizers()
 
-        if self.hparams.cropz > 0:
-            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropz * hparams.uprate), mode='trilinear')
-        else:
-            self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, 32 * hparams.uprate), mode='trilinear')
+        self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropz * hparams.uprate), mode='trilinear')
 
         # CUT NCE
         if not self.hparams.nocut:
@@ -124,6 +125,7 @@ class GAN(BaseModel):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitModel")
         # coefficient for the identify loss
+        parser.add_argument("--dsp", type=int, default=0)
         parser.add_argument("--lambB", type=int, default=1)
         parser.add_argument("--l1how", type=str, default='dsp')
         parser.add_argument("--uprate", type=int, default=4)
@@ -140,6 +142,7 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
+        parser.add_argument('--fix_dis', action='store_true')
         return parent_parser
 
     def test_method(self, net_g, img):
@@ -151,7 +154,12 @@ class GAN(BaseModel):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
             batch['img'][0] = batch['img'][0][:, :, :, :, z_init:z_init + self.hparams.cropz]
-        #batch['img'][1] = batch['img'][1][:, :, :, :, z_init:z_init + self.hparams.cropz]
+            # batch['img'][1] = batch['img'][1][:, :, :, :, z_init:z_init + self.hparams.cropz]
+
+        # extra downsample
+        if self.hparams.dsp > 0:
+            batch['img'][0] = batch['img'][0][:, :, :, :, ::self.hparams.dsp]
+            batch['img'][0] = self.upsample(batch['img'][0])
 
         self.oriX = batch['img'][0]  # (B, C, X, Y, Z) # original
         #self.oriY = batch['img'][1]  # (B, C, X, Y, Z) # original

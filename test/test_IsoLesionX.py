@@ -9,81 +9,6 @@ import yaml
 from utils.data_utils import imagesc
 
 
-def old_function():
-    if 0:
-        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + 'original/a2d/' + '*'))[:],
-                                       suffix='a2d/', padding=False, upsample=8, trd=(None, 800))
-
-    if 0:
-        source = root + 'original/addpm2d0506/'
-        IsoLesion_interpolate(destination=root + our_dir + 'addpm3d/',
-                              subjects=sorted(glob.glob(source + '*'))[:],
-                              net=net, to_upsample=to_upsample, padding=False, trd=(None, 800))
-        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + our_dir + 'addpm3d/' + '*'))[:],
-                                       suffix='addpm3d/', padding=False, trd=(-1, 1))
-
-    #####################
-    # Calculate difference
-    #####################
-    if 0:
-        x_list = sorted(glob.glob(root + 'original/a2d/*'))
-        y_list = sorted(glob.glob(root + 'original/addpm2d0506/*'))
-        destination = 'difference2d/'
-        os.makedirs(root + our_dir + destination, exist_ok=True)
-        calculate_difference(x_list, y_list, destination=destination)
-    if 0:
-        x_list = sorted(glob.glob(root + our_dir + 'a3d/*'))
-        y_list = sorted(glob.glob(root + our_dir + 'addpm3d/*'))
-        mask_list = sorted(glob.glob(root + our_dir + 'difference2d/*'))
-        destination = 'difference3d/'
-        os.makedirs(root + our_dir + destination, exist_ok=True)
-        calculate_difference(x_list, y_list, destination=destination, mask_list=mask_list)
-
-    if 0:
-        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-        #                               subjects=sorted(glob.glob(root + our_dir + 'difference2d/' + '*'))[:],
-        #                               suffix='difference2d/', upsample=8, trd=None)
-        reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + our_dir + 'difference3d/' + '*'))[:],
-                                       suffix='difference3d/', trd=None)
-        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='a2d/', upsample=8)
-        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='a3d/')
-
-        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='addpm2d/', upsample=8)
-        #reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/', suffix='addpm3d/')
-
-    if 0:
-        #seg = torch.load('/home/ghc/Dropbox/TheSource/scripts/ContrastiveDiffusion/submodels/atten_0706.pth').eval()
-        #seg = torch.load('/home/ghc/Dropbox/TheSource/scripts/ContrastiveDiffusion/submodels/80.pth').eval()
-        seg = torch.load('/home/ghc/Dropbox/TheSource/scripts/ContrastiveDiffusion/submodels/dual_atten_0706.pth')#.eval()
-        #seg_bone(root + 'a2d/', root + 'a2d_bone/')
-        #seg_bone(root + 'addpm2d/', root + 'addpm2d_bone/')
-        seg_bone(root + 'test/a3d/', root + 'test/a3d_bone/')
-
-    #y_list = sorted(glob.glob(root + 'a2d_bone/*'))
-    #x_list = sorted(glob.glob(root + 'addpm2d_bone/*'))
-    #os.makedirs(root + 'difference2d_bone/', exist_ok=True)
-    #calculate_difference(x_list, y_list, destination='difference2d_bone/')
-
-    if 0:
-        root = '/media/ExtHDD01/oai_diffusion_interpolated/new/expanded3d/'
-        xlist = sorted(glob.glob(root + 'zxdifference3d/*'))
-        ylist = sorted(glob.glob(root + 'zxdifference2d/*'))
-
-        for (x, y) in zip(xlist, ylist):
-
-            x0 = tiff.imread(x)
-            y0 = tiff.imread(y)
-            print(x0.min(), x0.max(), y0.min(), y0.max())
-            x0 = x0 / 255
-            y0 = (y0 > 0) / 1
-            mul = np.multiply(x0, y0)
-            mul = (mul * 255).astype(np.uint8)
-            tiff.imwrite(x.replace('zxdifference3d', 'mul'), mul)
-
-
 def seg_bone(source, destination, filter_area=False):
     os.makedirs(destination, exist_ok=True)
     flist = [x.split('/')[-1] for x in sorted(glob.glob(source + '*'))]
@@ -147,14 +72,19 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
     for i in tqdm(range(len(subjects))):
 
         aug_all = []
-        for aug in [2, 3]:#range(1):
+        for aug in args.aug_methods:#range(1):
+            print(aug)
             x0 = tiff.imread(subjects[i])  # (Z, X, Y)
+            print(x0.shape)
+            x0 = x0#[10:26, :, :]
             if aug == 1:
                 x0 = np.transpose(x0, (0, 2, 1))
             elif aug == 2:
                 x0 = x0[:, ::-1, :]
             elif aug == 3:
                 x0 = x0[:, :, ::-1]
+            elif aug == 4:
+                x0 = x0[:, ::-1, ::-1]
             filename = subjects[i].split('/')[-1].split('.')[0]
 
             x0 = norm_11(x0, trd)
@@ -241,10 +171,15 @@ def IsoLesion_interpolate(destination, subjects, net, to_upsample=False, mirror_
                 x0pad = np.transpose(x0pad, (0, 2, 1))
             elif aug == 2:
                 combine = combine[:, ::-1, :]
+                x0pad = x0pad[:, ::-1, :]
             elif aug == 3:
                 combine = combine[:, :, ::-1]
+                x0pad = x0pad[:, :, ::-1]
+            elif aug == 4:
+                combine = combine[:, ::-1, ::-1]
+                x0pad = x0pad[:, ::-1, ::-1]
 
-            #combine = (combine + x0pad) / 2
+            #combine = (combine + x0pad * 0) / 2
 
             aug_all.append(combine)
         aug_all = np.stack(aug_all, 3)
@@ -313,8 +248,8 @@ def norm_11(x, trd=None):
         x[x > trd[1]] = trd[1]
         if trd[0] is not None:
             x[x < trd[0]] = trd[0]
-            #x = (x - trd[0]) / (trd[1] - trd[0])
-            x = (x - x.min()) / (x.max() - x.min())
+            x = (x - trd[0]) / (trd[1] - trd[0])
+            #x = (x - x.min()) / (x.max() - x.min())
         else:
             x = x / trd[1]
     else:
@@ -429,7 +364,7 @@ if __name__ == "__main__":
                                 help='Epoch number or "last"')
             parser.add_argument('--to_upsample', type=lambda x: (str(x).lower() == 'true'), default=True)
             parser.add_argument('--raw_trd', type=lambda x: tuple(map(int, x.split(','))),
-                                default='0,800', help='Raw threshold (format: min,max)')
+                                default='50,800', help='Raw threshold (format: min,max)')
             parser.add_argument('--raw_source', type=str, default='a2d/',
                                 help='Raw source directory')
             parser.add_argument('--stack_direction', type=str, default=None,
@@ -448,6 +383,7 @@ if __name__ == "__main__":
             parser.add_argument('--print_a2d', type=lambda x: (str(x).lower() == 'true'), default=False)
             parser.add_argument('--root', type=str)
             parser.add_argument('--log_root', type=str)
+            parser.add_argument('--aug_methods', type=lambda x: tuple(map(int, x.split(','))))
 
             return parser.parse_args(args)
 
@@ -473,140 +409,25 @@ if __name__ == "__main__":
     args = load_config()
     print(args)
 
-    if 1:
-        root = args.root
-        log_root = args.log_root
+    root = args.root
+    log_root = args.log_root
 
-        # Load model
-        net = get_model()
+    # Load model
+    net = get_model()
 
-        # output root
-        our_dir = args.out_dir
-        os.makedirs(root + our_dir, exist_ok=True)
+    # output root
+    our_dir = args.out_dir
+    os.makedirs(root + our_dir, exist_ok=True)
 
-        source = root + 'original/' + args.raw_source
-        IsoLesion_interpolate(destination=root + our_dir + 'a3d/',
-                              subjects=sorted(glob.glob(source + '*'))[args.irange[0]:args.irange[1]],
-                              net=net, to_upsample=args.to_upsample, mirror_padding=args.mirror_padding,
-                              trd=args.raw_trd, z_pad=args.z_pad)
+    source = root + 'original/' + args.raw_source
+    IsoLesion_interpolate(destination=root + our_dir + 'a3d/',
+                          subjects=sorted(glob.glob(source + '*'))[args.irange[0]:args.irange[1]],
+                          net=net, to_upsample=args.to_upsample, mirror_padding=args.mirror_padding,
+                          trd=args.raw_trd, z_pad=args.z_pad)
+    reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
+                                   subjects=sorted(glob.glob(root + our_dir + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
+                                   suffix=args.suffix, fill_blank=False, trd=(-1, 1))
+    if args.print_a2d:
         reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + our_dir + 'a3d/' + '*'))[args.irange[0]:args.irange[1]],
-                                       suffix=args.suffix, fill_blank=False, trd=(-1, 1))
-        if args.print_a2d:
-            reslice_3d_to_2d_for_visualize(destination=root + our_dir + 'expanded3d/',
-                                       subjects=sorted(glob.glob(root + 'original/' + args.raw_source + '*'))[args.irange[0]:args.irange[1]],
-                                       suffix='a2d/', fill_blank=False, trd=None, upsample=8)
-
-    if 0:
-        def encode(x0, net):
-            if args.gpu:
-                x0 = x0.cuda()
-            z = net(x0, method='encode')
-            for i in range(len(z)):
-                z[i] = z[i].detach().cpu()
-            return z
-
-        def decode(z, net):
-            if args.gpu:
-                for i in range(len(z)):
-                    z[i] = z[i].cuda()
-            x = net(z, method='decode')['out0']
-            out_all = x.detach().cpu()
-            out_all = out_all[0, 0, :, :, :].numpy()
-            out_all = np.transpose(out_all, (2, 0, 1))
-            for i in range(len(z)):
-                z[i] = z[i].detach().cpu()
-            return out_all
-
-
-        def get_weight(size, C=16, position='middle'):
-            # the linearly tapering weight to combine al the individual ROI
-            weight = np.ones(size)
-            if position != 'begin':
-                weight[:C, :, :] = np.expand_dims(np.expand_dims(np.linspace(0, 1, C), 1), 2)
-            weight[-C:, :, :] = np.expand_dims(np.expand_dims(np.linspace(1, 0, C), 1), 2)
-            return weight
-
-
-        trd = (0, 800)
-        x0 = tiff.imread('/media/ExtHDD01/oai_diffusion_interpolated/original/selected/9031426_01_RIGHT.tif')
-        net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet3d/unet3d/checkpoints/net_g_model_epoch_160.pth',
-                        map_location=torch.device('cpu'))#.eval()
-        #net = torch.load('/media/ExtHDD01/logs/womac4/IsoScopeXX/unet/redounet/checkpoints/net_g_model_epoch_100.pth',
-        #                 map_location=torch.device('cpu')).eval()
-
-        args.gpu = True
-        net = net.cuda()#.eval()
-
-        x0 = norm_11(x0, trd)
-        x0 = torch.from_numpy(x0).unsqueeze(0).unsqueeze(0).float().permute(0, 1, 3, 4, 2)  # (B, C, H, W, D)
-
-        #x0 = torch.flip(x0, [4])
-
-        #up = torch.nn.Upsample(size=(x0.shape[2], x0.shape[3], x0.shape[4] * 8), mode='trilinear')
-        #xup = up(x0)
-
-        #up2d = torch.nn.Upsample(size=(x0.shape[3], x0.shape[4] * 8), mode='bicubic')
-        #xup = up2d(x0.squeeze().unsqueeze(1)).permute(1, 0, 2, 3).unsqueeze(0).float()
-
-        up2d = torch.nn.Upsample(size=(x0.shape[2], x0.shape[4] * 8), mode='bilinear')
-        xup = up2d(x0.permute(3, 0, 2, 4, 1)[:, :, :, :, 0]).permute(1, 2, 0, 3).unsqueeze(0).float()
-
-        xup = xup[:, :, 64:-64, :, :]
-
-        #out_all = []
-        #for mc in range(3):
-        #    out_all.append(decode(encode(xup, net), net))
-        #xupx = np.mean(np.stack(out_all, 0), 0)
-        #tiff.imwrite('temp.tif', np.transpose(xupx, (1, 2, 0)))
-
-        if 1:
-            stacks = []
-            last_z = None
-            last_img = None
-
-            for iz in range(0, xup.shape[4]-16*6, 16*3):
-                #out = test_once(xup[:, :, :, :, iz:iz+64], net)
-
-                patch = xup[:, :, :, :, iz:iz+16*6]
-
-                mirror_padding = 16
-                if mirror_padding > 0:
-                    padL = patch[:, :, :, :, :mirror_padding]
-                    padR = patch[:, :, :, :, -mirror_padding:]
-                    patch = torch.cat([torch.flip(padL, [4]), patch, torch.flip(padR, [4])], 4)
-
-                out_all = []
-                for mc in range(1):
-                    z = encode(patch, net)
-
-                    #zflip = encode(torch.flip(patch, [4]), net)
-                    #for i in range(len(z)):
-                    #    z[i] = (z[i] + torch.flip(zflip[i], [4])) / 2
-
-                    #if last_z is not None:
-                    #    for i in range(len(z)):
-                    #        overlap = z[i].shape[4] // 2
-                    #        z[i][:,:,:,:, :overlap] = (z[i][:,:,:,:, :overlap] + last_z[i][:,:,:,:, -overlap:]) / 2
-                    last_z = z
-                    out = decode(z, net)
-                    out_all.append(out)
-                out = np.mean(np.stack(out_all, 0), 0)
-
-                print(out.shape)
-                out = out[mirror_padding+16:-(mirror_padding+16), :, :]
-
-                w = get_weight(size=(64, 256, 384), C=16, position='middle')
-                out = np.multiply(out, w)
-
-                if last_img is not None:
-                    overlap = out.shape[0] // 4
-                    print(overlap)
-                    out[:overlap] = (out[:overlap, :, :] + last_img[-overlap:, :, :])
-
-                last_img = out
-
-                stacks.append(out[:48, :, :])
-            combine = np.concatenate(stacks, 0)
-            tiff.imwrite('temp.tif', np.transpose(combine, (1, 2, 0)))
-
+                                   subjects=sorted(glob.glob(root + 'original/' + args.raw_source + '*'))[args.irange[0]:args.irange[1]],
+                                   suffix='a2d/', fill_blank=False, trd=None, upsample=8)

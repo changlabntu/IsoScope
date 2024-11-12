@@ -21,4 +21,4 @@
 
 #Fly0B CUT 1
 #CUDA_VISIBLE_DEVICES=0,1,2,3 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj ae/cut/1 --hbranch z --ldmyaml ldmaex2 --netG none --lamb 10 --lr 0.0002 --models ae0iso0tccut --tc --cropz 16 --cropsize 128 --env a6k --adv 1 --rotate --ngf 32 --direction oripatch_ft0patch --nm 00 --dataset DPM4X --epoch_save 100 --n_epochs 5000 --lr_policy cosine --mc
-CUDA_VISIBLE_DEVICES=0,1,2,3 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj ae/cut/lamb0 --lamb 0 --lr 0.0002 --hbranch z --ldmyaml ldmaex2 --netG none --models ae0iso0tccut --tc --cropz 16 --cropsize 128 --env a6k --adv 1 --rotate --ngf 32 --direction oripatch_ft0patch --nm 00 --dataset DPM4X --epoch_save 100 --n_epochs 5000 --lr_policy cosine --mc
+CUDA_VISIBLE_DEVICES=0,1,2,3 NO_ALBUMENTATIONS_UPDATE=1 python train.py --jsn cyc_imorphics --prj ae/cut/lamb1NCE10 --lamb 1 --lbNCE 10 --lr 0.0002 --hbranch z --ldmyaml ldmaex2 --netG none --models ae0iso0tccut --tc --cropz 16 --cropsize 128 --env runpod --adv 1 --rotate --ngf 32 --direction oripatch_ft0patch --nm 00 --dataset DPM4X --epoch_save 100 --n_epochs 5000 --lr_policy cosine --mc

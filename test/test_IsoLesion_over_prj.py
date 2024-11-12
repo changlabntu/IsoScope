@@ -1,7 +1,7 @@
 import glob, os
 import subprocess
 import sys
-from utils.calculate_kid import load_images_from_folder, calculate_metrics
+#from utils.calculate_kid import load_images_from_folder, calculate_metrics
 import pandas as pd
 from utils.data_utils import imagesc
 import tifffile as tiff
@@ -27,7 +27,7 @@ elif 0:
 elif 0:
     prj_dirs = ['/IsoScopeXX/unet/redounet/']
     epoch_num = [100]
-elif 1:  # BEST for now!
+elif 0:  # BEST for now!
     prj_dirs = ['/IsoScopeXX/unet3d/unet3d/']
     epoch_num = [160]#[160]
 elif 0:
@@ -41,9 +41,14 @@ elif 0:
     epoch_num = [120]  # [160]
 elif 0:
     prj_dirs = ['/IsoMRIclean/gd2332/']
-    epoch_num = [100]  # [160]
+    epoch_num = [100]  # [80] # BEST! 110324
+elif 1:
+    prj_dirs = ['/IsoMRIclean/gd2332/']
+    epoch_num = [100]
+
 
 eval = False
+aug_method = "0"
 
 to_upsample = True
 mirror_padding = 2
@@ -52,12 +57,12 @@ num_mc = 1
 
 root = '/media/ExtHDD01/oai_diffusion_interpolated/'
 log_root = '/media/ExtHDD01/logs/'
-#raw_source = "a2d/"
-#suffix = "a3d/"
+raw_source = "a2d/"
+suffix = "a3d/"
 #raw_source = "addpm2d0506/"
 #suffix = "addpm3d/"
-raw_source = 'diffresult0921/vanilla/'
-suffix = "vanilla/"
+#raw_source = 'diffresult0921/new/'
+#suffix = "new/"
 #['3D', 'dualE-SPADE', 'vanilla', 'dualE']
 
 print_a2d = True
@@ -65,7 +70,7 @@ gpu = False
 stack_direction = None
 out_dir = None
 
-irange = "0,10"
+irange = "0, 1"
 
 
 if eval:
@@ -102,7 +107,7 @@ for prj in prj_dirs:
                    "--prj", prj, "--epoch", str(epoch), "--irange", irange, "--eval", str(eval),
                    "--to_upsample", str(to_upsample), "--suffix", suffix, "--mirror_padding", str(mirror_padding),
                    "--z_pad", str(z_pad), "--num_mc", str(num_mc), "--raw_source", raw_source,
-                   "--root", root, "--log_root", log_root]#, "--raw_trd", str(raw_trd)]
+                   "--root", root, "--log_root", log_root, "--aug_method", str(aug_method)]
         if print_a2d:
             command = command + ["--print_a2d", str(print_a2d)]
         if gpu:
