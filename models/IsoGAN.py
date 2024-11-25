@@ -71,6 +71,7 @@ class PatchSampleF(nn.Module):
         # print([x.shape for x in return_feats]) # (B * num_patches, 256) * level of features
         return return_feats, return_ids
 
+
 class GAN(BaseModel):
     def __init__(self, hparams, train_loader, test_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, test_loader, checkpoints)

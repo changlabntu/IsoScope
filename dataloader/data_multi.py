@@ -341,7 +341,7 @@ class PairedCubes(PairedSlices):
         if self.opt.nm == '11':
             outputs = [transforms.Normalize((0.5, ) * x.shape[0], (0.5, ) * x.shape[0])(x) for x in outputs]
 
-        # croppiing the first dimension
+        # croppiing t he first dimension
         if self.opt.cropz > 0:
             cropz_range = np.random.randint(0, outputs[0].shape[3] - self.opt.cropz + 1)
             outputs = [x[:, :, :, cropz_range:cropz_range + self.opt.cropz] for x in outputs]

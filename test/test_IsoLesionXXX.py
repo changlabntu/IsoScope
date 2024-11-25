@@ -39,8 +39,9 @@ def get_one(x0, aug, residual=False):
     # upsample part
     x0 = torch.stack([up2d(x0[:,:,:,i,:]) for i in range(x0.shape[3])], 3)
     print(x0.shape)
-    #x0 = downsample(x0)
+    #x0 = x0[:, :, :, :, 4::16]
     #x0 = torch.stack([up2d(x0[:,:,:,i,:]) for i in range(x0.shape[3])], 3)
+    #tiff.imwrite('temp.tif', x0.squeeze().detach().numpy())
 
     # padding
     if mirror_padding > 0:
@@ -73,7 +74,9 @@ def test_IsoLesion(sub):
     print(x0.min(), x0.max())
 
     if trd[0] == None:
-        trd[0] = np.percentile(x0, 15)
+        trd[0] = np.percentile(x0, 23)
+    if trd[1] == None:
+        trd[1] = 800#x0.max()
 
     x0 = np.transpose(x0, (1, 2, 0))  # (X, Y, Z)
     # Normalization
@@ -115,6 +118,9 @@ def test_IsoLesion(sub):
     xup, out = get_one(x00, aug=3, residual=residual)
     _, out2 = get_one(x00, aug=2, residual=residual)
     out = (out + out2) / 2
+    #_, out0 = get_one(x00, aug=0, residual=residual)
+    #_, out1 = get_one(x00, aug=1, residual=residual)
+    #out = (out + out0 + out1 + out2) / 4
 
     # XY
     tiff.imwrite(root + '/out/xy/' + suffix + subject_name + '.tif', np.transpose(out, (2, 0, 1)))
@@ -132,21 +138,18 @@ def test_IsoLesion(sub):
 residual = False
 
 # path
-root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_results/'
+root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/'
 
 # models
 # (prj, epoch) = ('gd1331check3', 80)
 # (prj, epoch) = ('gd2332', 60)
-#(prj, epoch) = ('gd1331', 180)
-(prj, epoch) = ('gd1331fix/cut0', 180)
-trd = [None, 800]
-subjects = sorted(glob.glob(root + 'original/compare/compare2/*'))
+(prj, epoch) = ('gd1331', 180)
+#(prj, epoch) = ('gd1331nocyc/1run2', 300)
+trd = [None, None]
+subjects = sorted(glob.glob(root + 'original/a2d/*'))
 
 mirror_padding = 32
 
-#trd = [None, 1]
-#subjects = sorted(glob.glob(root + 'diffresult0921/dualE/*'))
-#suffix = 'dualE/'
 suffix = ''
 
 
@@ -159,16 +162,28 @@ os.makedirs(root + '/out/yz2d/' + suffix, exist_ok=True)
 
 
 x0 = tiff.imread(subjects[0])
-upsample = torch.nn.Upsample(size=(x0.shape[1], x0.shape[2], 30 * 8), mode='trilinear')
-#downsample = torch.nn.Upsample(size=(x0.shape[0], x0.shape[1], x0.shape[2]), mode='trilinear') XXXXXX
-#up2d = torch.nn.Upsample(size=(x0.shape[1], x0.shape[0] * 8), mode='bicubic')
 up2d = torch.nn.Upsample(scale_factor=(1, 8), mode='bicubic')
 
+
+prj_list = ['gd1331']#['gd1331nocyc/' + x.split('/')[-1] for x in sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoMRIclean/gd1331nocyc/*'))]
+epoch_list = [180]#list(range(100, 601, 100))
+
 for sub in subjects[:1]:
-    net = torch.load('/media/ExtHDD01/logs/womac4/IsoMRIclean/' + prj +
-                     '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu')  # .cuda()
-    print(sub)
-    test_IsoLesion(sub)
+    for prj in prj_list:
+        for epoch in epoch_list:
+            try:
+                net = torch.load('/media/ExtHDD01/logs/womac4/IsoMRIclean/' + prj +
+                                 '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu')  # .cuda()
+                print(sub)
+                print(prj, epoch)
+                test_IsoLesion(sub)
+                #data = tiff.imread('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/out/yz/9000099_03.tif.tif')
+                #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2/' + prj.replace('/', '_') + '_' + str(epoch) + '.tif', data)
+                #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2D/' + prj.replace('/', '_') + '_' + str(
+                #    epoch) + '.tif', data[184, ::])
+
+            except:
+                print('Error:', prj, epoch)
 
 
 if 0:
@@ -206,7 +221,7 @@ if 0:
     # Example usage
     root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_results/out/'
     process_3d_tifs(root + 'xz/', root + 'png/xz/')
-
+    process_3d_tifs(root + 'yz/', root + 'png/yz/')
     process_3d_tifs(root + 'xy/', root + 'png/xy/')
     process_3d_tifs(root + 'yz2d/', root + 'png/yz2d/')
     process_3d_tifs(root + 'xz2d/', root + 'png/xz2d/')

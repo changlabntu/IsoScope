@@ -82,24 +82,26 @@ class GAN(BaseModel):
                                norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='1d', decode='3d')
         _, self.net_d = self.set_networks()
         self.hparams.final = 'tanh'
-        self.net_gback = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
-                               norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='3d', decode='1d')
-        _, self.net_dzy = self.set_networks()
 
-        if self.hparams.fix_dis:
+        print('nocyc:  ' + str(self.hparams.nocyc))
+        if not self.hparams.nocyc:
+            self.net_gback = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
+                                   norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='3d', decode='1d')
+
+            _, self.net_dzy = self.set_networks()
             _, self.net_dzx = self.set_networks()
-        else:
-            self.net_dzx = copy.deepcopy(self.net_dzy)
 
         # save model names
-        self.netg_names = {'net_g': 'net_g', 'net_gback': 'net_gback'}
-        self.netd_names = {'net_d': 'net_d', 'net_dzy': 'net_dzy', 'net_dzx': 'net_dzx'}
-        #self.netg_names = {'net_gy': 'net_gy'}
-        #self.netd_names = {'net_dy': 'net_dy'}
+        self.netg_names = {'net_g': 'net_g'}
+        self.netd_names = {'net_d': 'net_d'}
+
+        if not self.hparams.nocyc:
+            self.netg_names['net_gback'] = 'net_gback'
+            self.netd_names['net_dzy'] = 'net_dzy'
+            self.netd_names['net_dzx'] = 'net_dzx'
 
         # Finally, initialize the optimizers and scheduler
         self.configure_optimizers()
-
         self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropz // hparams.dsp * hparams.uprate), mode='trilinear')
 
         # CUT NCE
@@ -142,7 +144,6 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
-        parser.add_argument('--fix_dis', action='store_true')
         return parent_parser
 
     def test_method(self, net_g, img):
@@ -176,20 +177,33 @@ class GAN(BaseModel):
         return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]  # (Z, C, X, Y, B)
 
     def adv_loss_six_way(self, x, net_d, truth):
+        # x (B, C, X, Y, Z)
+        rint = np.random.randint(3)
+
         loss = 0
-        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                       net_d=net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                       net_d=net_d, truth=truth)
-        loss = loss / 6
+        if rint == 0:
+            zy = x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0]  # (X, C, Z, Y, B)
+            yz = x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0]  # (X, C, Y, Z, B)
+            loss += self.add_loss_adv(a=zy, net_d=net_d, truth=truth)  # (X, C, Z, Y)
+            loss += self.add_loss_adv(a=yz, net_d=net_d, truth=truth)  # (X, C, Y, Z)
+            loss += self.add_loss_adv(a=torch.flip(zy, [2]), net_d=net_d, truth=truth)
+            loss += self.add_loss_adv(a=torch.flip(yz, [3]), net_d=net_d, truth=truth)
+
+        if rint == 1:
+            zx = x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0]  # (Y, C, Z, X, B)
+            xz = x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0]  # (Y, C, X, Z, B)
+            loss += self.add_loss_adv(a=zx, net_d=net_d, truth=truth)  # (Y, C, Z, X)
+            loss += self.add_loss_adv(a=xz, net_d=net_d, truth=truth)  # (Y, C, X, Z)
+            loss += self.add_loss_adv(a=torch.flip(zx, [2]), net_d=net_d, truth=truth)
+            loss += self.add_loss_adv(a=torch.flip(xz, [3]), net_d=net_d, truth=truth)
+
+        if rint == 2:
+            xy = x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y, B)
+            yx = x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0]  # (Z, C, Y, X, B)
+            loss += 2 * self.add_loss_adv(a=xy, net_d=net_d, truth=truth)  # (Z, C, X, Y)
+            loss += 2 * self.add_loss_adv(a=yx, net_d=net_d, truth=truth)  # (Z, C, Y, X)
+
+        loss = loss / 4
         return loss
 
     def adv_loss_six_way_y(self, x, truth):
