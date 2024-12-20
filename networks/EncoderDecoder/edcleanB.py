@@ -57,56 +57,41 @@ def get_normalization(out_channels, method, dim='3d'):
         return nn.Identity()
 
 
-class conv2d_bn_block(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel=3, momentum=0.01, activation=nn.ReLU, norm='batch'):
-        super(conv2d_bn_block, self).__init__()
-
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel, padding=1)
-        self.norm = get_normalization(out_channels, method=norm, dim=2)
-        self.activation = activation()
-
-    def forward(self, x):
-        # Assuming x comes in with shape (1, C, X, Y, Z)
-        x = x.permute(3, 1, 2, 4, 0).squeeze(4)  # (Y, C, X, Z)
-        x = self.conv(x)
-        x = self.norm(x)
-        x = self.activation(x)
-        x = x.unsqueeze(4).permute(4, 1, 2, 0, 3)  # (1, C, X, Y, Z)
-        return x
-
-
 class conv_block(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel=3, padding=1, momentum=0.01, activation=nn.ReLU, norm='batch', dim='3d'):
+    def __init__(self, in_channels, out_channels, kernel=3, momentum=0.01, activation=nn.ReLU, norm='batch', dim='3d'):
         super(conv_block, self).__init__()
 
         self.dim = dim
 
         if dim == '1d':
-            self.conv = nn.Conv1d(in_channels, out_channels, kernel, padding=padding)
+            self.conv = nn.Conv1d(in_channels, out_channels, kernel, padding=1)
         elif dim == '2d':
-            self.conv = nn.Conv2d(in_channels, out_channels, kernel, padding=padding)
+            self.conv = nn.Conv2d(in_channels, out_channels, kernel, padding=1)
         else:
-            self.conv = nn.Conv3d(in_channels, out_channels, kernel, padding=padding)
+            self.conv = nn.Conv3d(in_channels, out_channels, kernel, padding=1)
 
         self.norm = get_normalization(out_channels, method=norm, dim='3d')
         self.activation = activation()
 
     def forward(self, x):
+        # Assuming x comes in with shape (B, C, X, Y, Z)
+        dimX = x.shape[2]
+        dimY = x.shape[3]
         if self.dim == '1d':
-            # Assuming x comes in with shape (1, C, X, Y, Z)
-            x = x.permute(2, 3, 1, 4, 0).squeeze(4)  # (X, Y, C, Z)
-            dim0 = x.shape[0]
-            x = x.view(x.shape[0] * x.shape[1], x.shape[2], x.shape[3])  # (X*Y, C, Z)
+            x = x.permute(0, 2, 3, 1, 4)  # (B, X, Y, C, Z)
+            x = x.reshape(x.shape[0] * x.shape[1] * x.shape[2], x.shape[3], x.shape[4])  # (B*X*Y, C, Z)
         elif self.dim == '2d':
-            x = x.permute(3, 1, 2, 4, 0).squeeze(4)  # (Y, C, X, Z)
+            x = x.permute(0, 3, 1, 2, 4)  # (B, Y, C, X, Z)
+            x = x.reshape(x.shape[0] * x.shape[1], x.shape[2], x.shape[3], x.shape[4])  # (B*Y, C, X, Z)
 
         x = self.conv(x)
 
         if self.dim == '1d':
-            x = x.view(dim0, x.shape[0] // dim0, x.shape[1], x.shape[2]).unsqueeze(4)  # (X, Y, C, Z, 1)
-            x = x.permute(4, 2, 0, 1, 3)  # (1, C, X, Y, Z)
+            x = x.reshape(x.shape[0] // dimX // dimY, dimX, dimY, x.shape[1], x.shape[2])  # (B, X, Y, C, Z)
+            x = x.permute(0, 3, 1, 2, 4)  # (B, C, X, Y, Z)
         elif self.dim == '2d':
-            x = x.unsqueeze(4).permute(4, 1, 2, 0, 3)  # (1, C, X, Y, Z)
+            x = x.reshape(x.shape[0] // dimY, dimY, x.shape[1], x.shape[2], x.shape[3])  # (B, Y, C, X, Z)
+            x = x.permute(0, 2, 3, 1, 4)  # (B, C, X, Y, Z)
 
         x = self.norm(x)
         x = self.activation(x)
@@ -132,23 +117,25 @@ class deconv3d_bn_block(nn.Module):
         self.activation = ACTIVATION()
 
     def forward(self, x):
-        x = self.up(x)
 
+        x = self.up(x)
+        dimX = x.shape[2]
+        dimY = x.shape[3]
         if self.dim == '1d':
-            # Assuming x comes in with shape (1, C, X, Y, Z)
-            x = x.permute(2, 3, 1, 4, 0).squeeze(4)  # (X, Y, C, Z)
-            dim0 = x.shape[0]
-            x = x.view(x.shape[0] * x.shape[1], x.shape[2], x.shape[3])  # (X*Y, C, Z)
+            x = x.permute(0, 2, 3, 1, 4)  # (B, X, Y, C, Z)
+            x = x.reshape(x.shape[0] * x.shape[1] * x.shape[2], x.shape[3], x.shape[4])  # (B*X*Y, C, Z)
         elif self.dim == '2d':
-            x = x.permute(3, 1, 2, 4, 0).squeeze(4)  # (Y, C, X, Z)
+            x = x.permute(0, 3, 1, 2, 4)  # (B, Y, C, X, Z)
+            x = x.reshape(x.shape[0] * x.shape[1], x.shape[2], x.shape[3], x.shape[4])  # (B*Y, C, X, Z)
 
         x = self.conv(x)
 
         if self.dim == '1d':
-            x = x.view(dim0, x.shape[0] // dim0, x.shape[1], x.shape[2]).unsqueeze(4)  # (X, Y, C, Z, 1)
-            x = x.permute(4, 2, 0, 1, 3)  # (1, C, X, Y, Z)
+            x = x.reshape(x.shape[0] // dimX // dimY, dimX, dimY, x.shape[1], x.shape[2])  # (B, X, Y, C, Z)
+            x = x.permute(0, 3, 1, 2, 4)  # (B, C, X, Y, Z)
         elif self.dim == '2d':
-            x = x.unsqueeze(4).permute(4, 1, 2, 0, 3)  # (1, C, X, Y, Z)
+            x = x.reshape(x.shape[0] // dimY, dimY, x.shape[1], x.shape[2], x.shape[3])  # (B, Y, C, X, Z)
+            x = x.permute(0, 2, 3, 1, 4)  # (B, C, X, Y, Z)
 
         x = self.norm(x)
         x = self.activation(x)
@@ -175,8 +162,8 @@ class Generator(nn.Module):
             dropout = 0.0
 
         self.down0 = nn.Sequential(
-            encode_block(n_channels, nf, activation=act, norm='none', dim=encode, kernel=7, padding=3),
-            encode_block(nf, nf, activation=act, norm=norm_type, dim=encode, kernel=7, padding=3)
+            encode_block(n_channels, nf, activation=act, norm='none', dim=encode),
+            encode_block(nf, nf, activation=act, norm=norm_type, dim=encode)
         )
         self.down1 = nn.Sequential(
             encode_block(nf, 2 * nf, activation=act, norm=norm_type, dim=encode),

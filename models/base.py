@@ -133,6 +133,8 @@ class BaseModel(pl.LightningModule):
 
         self.log_image = {}
 
+        self.buffer = {}
+
     #def update_optimizer_scheduler(self):
     #    [self.optimizer_d, self.optimizer_g], [] = self.configure_optimizers()
 
@@ -256,7 +258,14 @@ class BaseModel(pl.LightningModule):
         for k in self.log_image.keys():
             self.save_tensor_to_png(self.log_image[k], self.dir_checkpoints + os.path.join(str(self.epoch).zfill(4) + k + '.png'))
 
+        self.reset_metrics()
         self.epoch += 1
+
+    def get_metrics(self):
+        pass
+
+    def reset_metrics(self):
+        pass
 
     def testing_step(self, batch, batch_idx):
         self.generation(batch)

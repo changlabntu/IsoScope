@@ -52,24 +52,15 @@ def tif_to_patches(npys, **kwargs):
 
                     if volumes[0].shape == (dz, dx, dy):
                         if volumes[0].mean() > kwargs['ftr']:
-                            if kwargs['permute'] is not None:
-                                for i in range(1, len(npys)):
-                                    volumes[i] = np.transpose(volumes[i], kwargs['permute'])
+                            print('hi')
                             for i in range(0, len(npys)):
-                                for s in range(volumes[0].shape[0]):
-                                    patch = volumes[i][s, ::]
-                                    #if kwargs['norm'] is not None:
-                                    patch = patch.astype(np.float32)
-                                    tiff.imwrite(root + kwargs['destination'][i] + kwargs['prefix'] + str(x).zfill(3) + str(y).zfill(3) + str(z).zfill(3) +
-                                                '_' + str(s).zfill(4) + '.tif', patch)
-                                    #tiff.imwrite(root + kwargs['destination'][i] + str(volumes[0].mean())[:7] + '_' + str(s).zfill(4) + '.tif', patch)
+                                if kwargs['permute'] is not None:
+                                    volumes[i] = np.transpose(volumes[i], kwargs['permute'])
 
-
-#def main(source, destination, dh, step, permute, trds, norm, prefix, ftr):
-#    for i, (s, d) in enumerate(zip(source, destination)):
-#        input = {'source': s + '.tif', 'destination': 'train/' + d + '/',
-#                 'permute': permute, 'dh': dh, 'step': step, 'trd': trds[i], 'norm': norm, 'prefix': prefix, 'ftr': ftr}
-#        tif_to_patches(**input)
+                                volumes[i] = volumes[i].astype(np.float32)
+                                tiff.imwrite(
+                                    root + kwargs['destination'][i] + kwargs['prefix'] + str(x).zfill(3) + str(
+                                        y).zfill(3) + str(z).zfill(3) + '.tif', volumes[i])
 
 
 def resampling(source, destination, scale=None, size=None):
@@ -106,26 +97,6 @@ def get_average(source, destination):
     #all = [tiff.imread(x) for x in l]
     #all = np.stack(all, 3)
 
-if 0:
-    #root = '/workspace/Data/DPM4X/'
-    #suffix = ''
-    #for s in ['3-2ROI000', '3-2ROI002', '3-2ROI006', '3-2ROI008']:
-    #    main(source=[s + suffix],
-    #         destination=['xyori512' + suffix],
-    #         dh=(32, 512, 512), step=(32, 512, 512), permute=None, trds=[424], norm='11', prefix=s.split('.')[0] + '-')
-
-    #root = '/workspace/Data/DPM4X/'
-    #root = '/media/ExtHDD01/Dataset/paired_images/DPM4X/'
-    root = '/home/ubuntu/Data/Dataset/paired_images/DPM4X/'
-    suffix = ''
-    for s in ['ori/3-2ROI00' + str(x) for x in range(10)]:##, '3-2ROI002', '3-2ROI006', '3-2ROI008']:
-        npy0 = tiff.imread(root + s + '.tif')
-        npy1 = tiff.imread((root + s + '.tif').replace('/ori/', '/ft0/'))
-        tif_to_patches([npy0, npy1],
-                       destination=['oripatch/', 'ft0patch/'],
-                       dh=(32, 256, 256), step=(32, 256, 256), permute=None,
-                       trd=((100, 424), (0, 4)), norm=('zrescale', '11'),
-                       prefix=s.split('.')[0].split('/')[-1] + '-', ftr=0, zrescale=6)
 
 if 0:
     root = '/workspace/Data/x2404g102/'
@@ -199,7 +170,7 @@ if 0: #LAST
                    trd=((0, 2000), ), norm=('11', ), prefix='', ftr=-0.5)
 
 
-if 1:
+if 0:
     #root = '/workspace/Data/Fly0B/'
     root = '/home/ubuntu/Data/Dataset/paired_images/aisr081424/'
     suffix = ''
@@ -272,3 +243,38 @@ if 0:
         #plt.show()
         print(x.replace('/ap/', '/apexp/'))
         tiff.imwrite(x.replace('/ap/', '/apexp/'), y)
+
+if 0:
+    #root = '/workspace/Data/DPM4X/'
+    #suffix = ''
+    #for s in ['3-2ROI000', '3-2ROI002', '3-2ROI006', '3-2ROI008']:
+    #    main(source=[s + suffix],
+    #         destination=['xyori512' + suffix],
+    #         dh=(32, 512, 512), step=(32, 512, 512), permute=None, trds=[424], norm='11', prefix=s.split('.')[0] + '-')
+
+    #root = '/workspace/Data/DPM4X/'
+    root = '/media/ExtHDD01/Dataset/paired_images/DPM4X/'
+    #root = '/home/ubuntu/Data/Dataset/paired_images/DPM4X/'
+    suffix = ''
+    for s in ['ori/3-2ROI00' + str(x) for x in range(10)]:##, '3-2ROI002', '3-2ROI006', '3-2ROI008']:
+        npy0 = tiff.imread(root + s + '.tif')
+        npy1 = tiff.imread((root + s + '.tif').replace('/ori/', '/ft0/'))
+        tif_to_patches([npy0, npy1],
+                       destination=['oripatch/', 'ft0patch/'],
+                       dh=(32, 256, 256), step=(32, 256, 256), permute=None,
+                       trd=((100, 424), (0, 4)), norm=('zrescale', '11'),
+                       prefix=s.split('.')[0].split('/')[-1] + '-', ftr=0, zrescale=6)
+
+
+root = '/workspace/Data/DPM4X/'
+#root = '/media/ExtHDD01/Dataset/paired_images/DPM4X/'
+#root = '/home/ubuntu/Data/Dataset/paired_images/DPM4X/'
+suffix = ''
+for s in ['ori/3-2ROI00' + str(x) for x in range(10)]:##, '3-2ROI002', '3-2ROI006', '3-2ROI008']:
+    npy0 = tiff.imread(root + s + '.tif')
+    npy1 = tiff.imread((root + s + '.tif').replace('/ori/', '/ft0/'))
+    tif_to_patches([npy0, npy1],
+                   destination=['train/oricube/', 'train/ft0cube/'],
+                   dh=(32, 256, 256), step=(32, 256, 256), permute=None,
+                   trd=((100, 424), (0, 4)), norm=('zrescale', '11'),
+                   prefix=s.split('.')[0].split('/')[-1] + '-', ftr=0, zrescale=6)

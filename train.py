@@ -9,7 +9,7 @@ from utils.make_config import load_json, save_json
 import json
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
-from dataloader.data_multi import MultiData as Dataset
+from dataloader.data_multi import PairedCubes as Dataset
 from utils.get_args import get_args
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -102,15 +102,6 @@ if __name__ == '__main__':
         trainer.fit(net, train_loader, eval_loader)
     else:
         trainer.fit(net, train_loader)
-
-    #train(net, args, train_set, eval_set, loss_function, metrics)
-
-    #print(len(train_set.subset[0].images))
-    #print(len(test_set.subset[0].images))
-    #print(len(set(train_set.subset[0].images + test_set.subset[0].images)))
-
-    # Examples of  Usage
-    # CUDA_VISIBLE_DEVICES=3 python train.py --prj test --models lesion_cutGB_xbm --jsn intersubject --lbX 1 --cropsize 256 -b 1 --xbm --start_iter 0 --xbm_size 1000
 
 def quick_copy():
     import glob

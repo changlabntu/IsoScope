@@ -9,7 +9,7 @@ from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 from ldm.util import instantiate_from_config
 import yaml
 import numpy as np
-from models.IsoScopeXXcyc0cut import PatchSampleF3D
+from models.CUT import PatchSampleF3D
 from networks.networks_cut import Normalize, init_net, PatchNCELoss
 
 

@@ -35,7 +35,7 @@ def get_one(x0, aug, residual=False):
 
     # extra downsample
 
-    x0 = x0[:, :, :, :, ::2]
+    x0 = x0[:, :, :, :, 1::2]
     #x0 = torch.nn.Upsample(x0, size=(x0.shape[0], x0.shape[1], x0.shape[2] * 2), mode='trilinear')(x0)
     x0 = torch.nn.Upsample(size=(x0.shape[2], x0.shape[3], x0.shape[4] * 2), mode='trilinear')(x0)
 
@@ -91,12 +91,12 @@ def test_IsoLesion(sub):
         x0 = (x0 - trd[0]) / (trd[1] - trd[0])
         x0 = (x0 - 0.5) / 0.5
 
-    x00 = 1 * x0
-    print(x00.shape)
-    # out: (X, Y, Z)
-    xup, out = get_one(x00, aug=0, residual=residual)
-    #_, out2 = get_one(x00, aug=2, residual=residual)
-    #out = (out + out2) / 2
+    # augmentations
+    out_all = []
+    for aug in aug_list:
+        xup, out = get_one(x0, aug=aug, residual=residual)
+        out_all.append(out)
+    out = np.array(out_all).sum(0) / len(aug_list)
 
     # XY
     tiff.imwrite(root + '/out/xy/' + suffix + subject_name + '.tif', np.transpose(out, (2, 0, 1)))
@@ -120,7 +120,7 @@ root = '/media/ExtHDD01/Dataset/paired_images/BraTSReg/train/'
 # (prj, epoch) = ('gd1331check3', 80)
 # (prj, epoch) = ('gd2332', 60)
 #(prj, epoch) = ('IsoMRIclean/gd1331', 1100)
-(prj, epoch) = ('IsoMRIclean/gd1331fix/dis0B', 1900)
+(prj, epoch) = ('IsoLambda/B2dsp2skip1crop', 1900)
 
 trd = [-1, 1]
 subjects = sorted(glob.glob(root + 't1normcroptest/*'))
@@ -147,8 +147,10 @@ x0 = tiff.imread(subjects[0])
 #up2d = torch.nn.Upsample(size=(x0.shape[1], x0.shape[0] * 8), mode='bicubic')
 up2d = torch.nn.Upsample(scale_factor=(1, 1), mode='bicubic')
 
+aug_list = [0]#, 1, 2, 3]
+
 for sub in subjects[:1]:
     net = torch.load('/media/ExtHDD01/logs/BraTSReg/' + prj +
-                     '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu')#.eval()  # .cuda()
+                     '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu').eval()  # .cuda()
     print(sub)
     test_IsoLesion(sub)

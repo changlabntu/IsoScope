@@ -45,8 +45,11 @@ def get_one(x0, aug, residual=False):
 
     # padding
     if mirror_padding > 0:
-        padL = torch.flip(x0[:, :, :, :, :mirror_padding], [4])
-        padR = torch.flip(x0[:, :, :, :, -mirror_padding:], [4])
+
+        randint = 0#np.random.randint(0, 16)
+
+        padL = torch.flip(x0[:, :, :, :, :mirror_padding+randint], [4])
+        padR = torch.flip(x0[:, :, :, :, -mirror_padding+randint:], [4])
         #padL = x0.mean() * torch.ones(x0[:, :, :, :, :mirror_padding].shape)
         #padR = x0.mean() * torch.ones(x0[:, :, :, :, -mirror_padding:].shape)
         x0 = torch.cat([padL, x0, padR], 4)
@@ -58,8 +61,8 @@ def get_one(x0, aug, residual=False):
 
     # unpadding
     if mirror_padding > 0:
-        out = out[:, :, :, :, mirror_padding:-mirror_padding]
-        x0 = x0[:, :, :, :, mirror_padding:-mirror_padding]
+        out = out[:, :, :, :, mirror_padding+randint:-mirror_padding+randint]
+        x0 = x0[:, :, :, :, mirror_padding+randint:-mirror_padding+randint]
     x0 = x0.squeeze().detach().numpy()
     x0 = get_aug(x0, aug, backward=True)
     out = out.squeeze().detach().numpy()
@@ -73,10 +76,12 @@ def test_IsoLesion(sub):
     print(x0.shape)
     print(x0.min(), x0.max())
 
+    x0 = x0[:, :, :]
+
     if trd[0] == None:
-        trd[0] = np.percentile(x0, 23)
+        trd[0] = np.percentile(x0, 15)
     if trd[1] == None:
-        trd[1] = 800#x0.max()
+        trd[1] = x0.max()
 
     x0 = np.transpose(x0, (1, 2, 0))  # (X, Y, Z)
     # Normalization
@@ -133,25 +138,27 @@ def test_IsoLesion(sub):
     # YZ 2d
     tiff.imwrite(root + '/out/yz2d/' + suffix + subject_name + '.tif', xup)
 
-
 # parameters
 residual = False
 
 # path
 root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/'
 
+
 # models
 # (prj, epoch) = ('gd1331check3', 80)
 # (prj, epoch) = ('gd2332', 60)
-(prj, epoch) = ('gd1331', 180)
+(prj, epoch) = ('IsoMRIclean/gd1331', 180)
 #(prj, epoch) = ('gd1331nocyc/1run2', 300)
-trd = [None, None]
+#(prj, epoch) = ('IsoMRIcleanDis0/dis0', 320)
+#(prj, epoch) = ('IsoMRIclean/gd1331nocyc/1nomclambda', 100)
+#(prj, epoch) = ('IsoLambda/0cyc', 180)
+trd = [None, None] # [None, 800]
 subjects = sorted(glob.glob(root + 'original/a2d/*'))
 
 mirror_padding = 32
 
 suffix = ''
-
 
 os.makedirs(root + '/out/' + suffix, exist_ok=True)
 os.makedirs(root + '/out/xy/' + suffix, exist_ok=True)
@@ -165,64 +172,130 @@ x0 = tiff.imread(subjects[0])
 up2d = torch.nn.Upsample(scale_factor=(1, 8), mode='bicubic')
 
 
-prj_list = ['gd1331']#['gd1331nocyc/' + x.split('/')[-1] for x in sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoMRIclean/gd1331nocyc/*'))]
-epoch_list = [180]#list(range(100, 601, 100))
+prj_list = [prj]#['gd1331nocyc/' + x.split('/')[-1] for x in sorted(glob.glob('/media/ExtHDD01/logs/womac4/IsoMRIclean/gd1331nocyc/*'))]
+epoch_list = [epoch]#list(range(100, 601, 100))
 
 for sub in subjects[:1]:
     for prj in prj_list:
         for epoch in epoch_list:
-            try:
-                net = torch.load('/media/ExtHDD01/logs/womac4/IsoMRIclean/' + prj +
-                                 '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu')  # .cuda()
-                print(sub)
-                print(prj, epoch)
-                test_IsoLesion(sub)
-                #data = tiff.imread('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/out/yz/9000099_03.tif.tif')
-                #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2/' + prj.replace('/', '_') + '_' + str(epoch) + '.tif', data)
-                #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2D/' + prj.replace('/', '_') + '_' + str(
-                #    epoch) + '.tif', data[184, ::])
+            #try:
+            net = torch.load('/media/ExtHDD01/logs/womac4/' + prj +
+                             '/checkpoints/net_g_model_epoch_' + str(epoch) + '.pth', map_location='cpu')  # .cuda()
+            print(sub)
+            print(prj, epoch)
+            test_IsoLesion(sub)
+            #data = tiff.imread('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/out/yz/9000099_03.tif.tif')
+            #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2/' + prj.replace('/', '_') + '_' + str(epoch) + '.tif', data)
+            #tiff.imwrite('/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outimg2D/' + prj.replace('/', '_') + '_' + str(
+            #    epoch) + '.tif', data[184, ::])
 
-            except:
-                print('Error:', prj, epoch)
+            #except:
+            #    print('Error:', prj, epoch)
 
 
+import torch
+import glob
+import numpy as np
+import skimage.io
+import tifffile as tiff
+from torchmetrics.image.fid import FID
+from torchmetrics.image.kid import KID
+from tqdm import tqdm
+
+
+def load_pngs(root, irange):
+    img0 = sorted(root + '/*')[irange[0]:irange[1]]
+    img0 = np.stack([skimage.io.imread(x) for x in img0], 0)
+    img0 = torch.from_numpy(img0).unsqueeze(1).repeat(1, 3, 1, 1)  # (Z, C, X, Y)
+    return img0
+
+
+irange = [0, 10]
+
+#root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/outputs_all/IsoLambda2/xy/*'
+root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_outs/original/aval/*'
+
+img = sorted(glob.glob(root))[irange[0]:irange[1]]
+
+img = np.stack([tiff.imread(x) for x in img], 0)
+img = torch.from_numpy(img / 1).unsqueeze(1).repeat(1, 3, 1, 1, 1)  # (B, C, Z, X, Y)
+
+img = torch.nn.Upsample(scale_factor=(8, 1, 1), mode='nearest')(img)
+
+img = (img - img.min()) / (img.max() - img.min()) * 255
+img = img.type(torch.uint8)
+
+img0 = img.permute(0, 2, 1, 3, 4)  # (X, Y)
+img0 = img0.reshape(-1, 3, img0.shape[3], img0.shape[4])
+
+img1 = img.permute(0, 3, 1, 4, 2)  # (Y, Z)
+img1 = img1.reshape(-1, 3, img1.shape[3], img1.shape[4])
+
+
+# kid by subject
+kval = []
+for i in tqdm(range(img.shape[0])):
+    metrics = KID(subset_size=64).cuda()
+    metrics.update(img0[i*184:(i+1)*184, ::].cuda(), real=True)
+    metrics.update(img1[i*384:(i+1)*384, ::].cuda(), real=False)
+    kval.append(metrics.compute()[0].cpu().numpy())
+kval = np.array(kval)
+print(kval.mean(), kval.std())
+
+
+# fid by subject
+fval = []
+for i in tqdm(range(img.shape[0])):
+    fid = FID(feature=768).cuda()
+    fid.update(img0[i*184:(i+1)*184, ::].cuda(), real=True)
+    fid.update(img1[i*384:(i+1)*384, ::].cuda(), real=False)
+    fval.append(fid.compute().cpu().numpy())
+fval = np.array(fval)
+print(fval.mean(), fval.std())
+
+prj = 'nearest'
+np.save('figures/fid_' + prj + '.npy', fval)
+np.save('figures/kid_' + prj + '.npy', kval)
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+datas = []
+for prj in ['nearest', 'linear', 'Lambda2', 'Lambda0']:
+    datas.append(np.load('figures/fid_' + prj + '.npy'))
+
+# Create boxplot
+plt.figure(figsize=(10, 6))
+plt.boxplot(datas, labels=['Data 1', 'Data 2', 'Data 3', 'Data 4'])
+
+# Customize plot
+plt.title('Comparison of Four Datasets')
+plt.ylabel('Values')
+plt.show()
+
+# fid
 if 0:
-    import os
-    import numpy as np
-    from skimage import io
-    from pathlib import Path
-    def process_3d_tifs(input_folder, output_folder):
+    out = []
+    for f in [768, 2048][:1]:
+        fid = FID(feature=f).cuda()
+        fid.update(img0[:512, ::].cuda(), real=True)
+        fid.update(img1[:512, ::].cuda(), real=False)
+        out.append(fid.compute())
 
-        os.makedirs(output_folder, exist_ok=True)
-
-        # List all tif files
-        tif_files = sorted(glob.glob(input_folder + '/*.tif'))
-
-        for tif_file in tif_files:
-            # Load 3D image
-            img_path = os.path.join(input_folder, tif_file)
-            img_3d = io.imread(img_path)
-
-            # Normalize to 0-255
-            img_min = img_3d.min()
-            img_max = img_3d.max()
-            img_normalized = ((img_3d - img_min) / (img_max - img_min) * 255).astype(np.uint8)
-
-            # Save each slice as PNG
-            filename = os.path.splitext(tif_file)[0]
-            for i in range(img_normalized.shape[0])[:]:  # Assuming first dimension is Z
-                slice_name = f"{filename}_{i + 1}.png"
-                output_path = os.path.join(output_folder, slice_name.split('/')[-1])
-                io.imsave(output_path, img_normalized[i], check_contrast=False)
-
-            print(f"Processed {tif_file}: {img_normalized.shape[0]} slices saved")
+    # kid
+    import time
+    tini = time.time()
+    metrics = KID(subset_size=64).cuda()
+    metrics.update(img0[:512, ::].cuda(), real=True)
+    metrics.update(img1[:512, ::].cuda(), real=False)
+    print(metrics.compute())
+    print(time.time() - tini)
 
 
-    # Example usage
-    root = '/media/ghc/Ghc_data3/OAI_diffusion_final/isotropic_results/out/'
-    process_3d_tifs(root + 'xz/', root + 'png/xz/')
-    process_3d_tifs(root + 'yz/', root + 'png/yz/')
-    process_3d_tifs(root + 'xy/', root + 'png/xy/')
-    process_3d_tifs(root + 'yz2d/', root + 'png/yz2d/')
-    process_3d_tifs(root + 'xz2d/', root + 'png/xz2d/')
-    process_3d_tifs(root + 'xy2d/', root + 'png/xy2d/')
+
+
+
+
+
+
