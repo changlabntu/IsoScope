@@ -1,7 +1,0 @@
-#python train.py --jsn cyc_imorphics --prj IsoScopeXYprj/8X --models IsoScopeXYprj --cropz 16 --cropsize 128 --env runpod --adv 1 --rotate --ngf 32 --direction oripatch --nm 00 --netG ed023dunet --dataset DPM4X --n_epochs 10000 --lr_policy cosine --mc --lamb 10 --skipl1 4 --ndf 32 --input_nc 1 --epoch_save 100 --save_d --nocyc --env a6k
-#python train.py --jsn cyc_imorphics --prj IsoScopeXYftr0/checkftr0 --models IsoScopeXY --cropz 20 --cropsize 128 --env a6k --adv 1 --rotate --ngf 32 --direction xyoriexp0  --nm 00 --netG ed023dunet --dataset DPM4X --n_epochs 10000 --lr_policy cosine --mc --lamb 10 --skipl1 4 --ndf 32 --epoch_save 100 --save_d --nocyc
-
-#python train.py --jsn cyc_imorphics --prj IsoScopeXYftr0/resizeX2 --models IsoScopeXY --cropz 30 --cropsize 128 --resize 384 --env a6k --adv 1 --rotate --ngf 32 --direction xyoriexp0  --nm 00 --netG ed023d --dataset DPM4X --n_epochs 10000 --lr_policy cosine --mc --lamb 10 --skipl1 4 --ndf 32 --epoch_save 100 --save_d --nocyc
-
-
-CUDA_VISIBLE_DEVICES=0 python train.py --jsn cyc_imorphics --prj ae/cut/1_test_loader --hbranch z --ldmyaml ldmaex2 --netG none --lamb 10 --lr 0.0002 --models ae0iso0tccut --tc --cropz 16 --cropsize 128 --env t09 --adv 1 --rotate --ngf 32 --direction oripatch_ft0patch --nm 00 --dataset DPM4X --epoch_save 100 --n_epochs 5000 --lr_policy cosine --mc

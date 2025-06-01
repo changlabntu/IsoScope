@@ -9,7 +9,7 @@ from utils.make_config import load_json, save_json
 import json
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
-from dataloader.data_multi import PairedCubes as Dataset
+from dataloader.data_multi import PairedImageDataset as Dataset
 from utils.get_args import get_args
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -43,6 +43,17 @@ if __name__ == '__main__':
         args = parser.parse_args(namespace=t_args)
 
     # environment file
+    with open('env/env', 'r') as f:
+        configs = json.load(f)[args.env]
+
+    os.environ.setdefault('DATASET', configs['DATASET'])
+    os.environ.setdefault('LOGS', configs['LOGS'])
+
+    #if args.env is not None:
+    #    load_dotenv('env/.' + args.env)
+    #else:
+    #    load_dotenv('env/.t09')
+
     if args.env is not None:
         load_dotenv('env/.' + args.env)
     else:
@@ -56,7 +67,7 @@ if __name__ == '__main__':
     # Load Dataset and DataLoader
     train_set = Dataset(root=os.environ.get('DATASET') + args.dataset + '/train/',
                         path=args.direction,
-                        opt=args, mode='train', index=None, filenames=True)
+                        config=args, mode='train')#, index=None, filenames=True)
 
     train_loader = DataLoader(dataset=train_set, num_workers=1, batch_size=args.batch_size, shuffle=True,
                               pin_memory=True, drop_last=True)
@@ -64,7 +75,7 @@ if __name__ == '__main__':
     try:
         eval_set = Dataset(root=os.environ.get('DATASET') + args.dataset + '/val/',
                            path=args.direction,
-                           opt=args, mode='test', index=None, filenames=True)
+                           config=args, mode='test')#, index=None, filenames=True)
         eval_loader = DataLoader(dataset=eval_set, num_workers=1, batch_size=args.test_batch_size, shuffle=False,
                                  pin_memory=True)
     except:

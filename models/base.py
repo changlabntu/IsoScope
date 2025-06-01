@@ -108,6 +108,8 @@ class BaseModel(pl.LightningModule):
         self.loss_d_names = ['loss_d']
 
         # Hyper-parameters
+        print(hparams)
+        print(hparams.not_tracking_hparams)
         hparams = {x: vars(hparams)[x] for x in vars(hparams).keys() if x not in hparams.not_tracking_hparams}
         hparams.pop('not_tracking_hparams', None)
         self.hparams.update(hparams)

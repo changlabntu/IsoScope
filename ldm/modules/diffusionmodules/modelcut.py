@@ -8,6 +8,7 @@ from einops import rearrange
 from ldm.util import instantiate_from_config
 from ldm.modules.attention import LinearAttention
 
+# SAME WITH THE LDM'S ENCODER AND DECODER OF AUTOENCODER BUT RETURN  h, hbranch-> h, hbranch, hs
 
 def get_timestep_embedding(timesteps, embedding_dim):
     """

@@ -1,5 +1,6 @@
 import argparse
 import configparser
+import json
 
 
 def write_config(name, args):
@@ -19,10 +20,6 @@ def read_config(name):
         opt[k] = v
     opt = argparse.Namespace(**opt)
     return opt
-
-
-import argparse
-import json
 
 
 def load_json(name):

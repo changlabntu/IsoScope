@@ -18,7 +18,7 @@
             "netG": "dsmc",
             "norm": "batch",
             "mc": true,
-            "netD": "bpatch_16",
+            "netD": "patch_16",
             "input_nc": 1,
             "output_nc": 1,
             "ngf": 64,

@@ -1,3 +1,0 @@
-# Paths
-export LOGS='/workspace/logs/'
-export DATASET='/workspace/Data/'

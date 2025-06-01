@@ -91,7 +91,7 @@ class conv_block(nn.Module):
         self.norm = get_normalization(out_channels, method=norm, dim='3d')
         self.activation = activation()
 
-    def forward(self, x):
+    def forward(self, x):  # (B, C, X, Y, Z)
         if self.dim == '1d':
             # Assuming x comes in with shape (1, C, X, Y, Z)
             x = x.permute(2, 3, 1, 4, 0).squeeze(4)  # (X, Y, C, Z)
@@ -119,7 +119,7 @@ class deconv3d_bn_block(nn.Module):
                  activation=ACTIVATION, norm='batch', dim='3d'):
         super(deconv3d_bn_block, self).__init__()
         self.dim = dim
-        self.up = nn.Upsample(scale_factor=use_upsample)
+        self.up = nn.Upsample(scale_factor=use_upsample)#, mode='trilinear')
 
         if dim == '1d':
             self.conv = nn.Conv1d(in_channels, out_channels, 3, stride=1, padding=1)

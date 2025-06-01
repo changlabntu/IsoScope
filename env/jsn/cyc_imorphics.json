@@ -6,7 +6,7 @@
             "models": "cyc_imorphics",
             "dataset": "womac4",
             "load3d": true,
-            "dataset_mode": "PairedCubes",
+            "dataset_mode": "PairedSlices3D",
             "split": "all",
             "direction": "ap",
             "flip": false,

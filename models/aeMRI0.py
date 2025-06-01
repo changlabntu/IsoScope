@@ -3,9 +3,16 @@ import copy
 import torch
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
+from contextlib import contextmanager
+from ldm.modules.diffusionmodules.modelcut import Encoder, Decoder
+from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
+from ldm.util import instantiate_from_config
+import yaml
 from models.base import VGGLoss
 from networks.networks_cut import Normalize, init_net, PatchNCELoss
 from models.CUT import PatchSampleF3D
+from networks.networks_cut import Normalize, init_net, PatchNCELoss
 
 
 class GAN(BaseModel):
@@ -15,41 +22,58 @@ class GAN(BaseModel):
     def __init__(self, hparams, train_loader, eval_loader, checkpoints):
         BaseModel.__init__(self, hparams, train_loader, eval_loader, checkpoints)
 
-        from networks.EncoderDecoder.edclean import Generator
+        # Initialize encoder and decoder
+        print('Reading yaml: ' + self.hparams.ldmyaml)
+        with open('ldm/' + self.hparams.ldmyaml + '.yaml', "r") as f:
+            config = yaml.load(f, Loader=yaml.Loader)
+
+        ddconfig = config['model']['params']["ddconfig"]
+        if self.hparams.tc:
+            ddconfig['in_channels'] = 2
+            ddconfig['out_ch'] = 1
+        self.hparams.netG = ddconfig['interpolator']#'ed023e'   # 128 > 128
+
         self.hparams.final = 'tanh'
-        self.net_g = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
-                               norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='1d', decode='3d')
-        _, self.net_d = self.set_networks()
-        self.hparams.final = 'tanh'
+        if self.hparams.tc:
+            self.hparams.input_nc = 1  # this would not be used
+            self.hparams.output_nc = 2
+        self.net_g, self.net_d = self.set_networks()
 
-        print('nocyc:  ' + str(self.hparams.nocyc))
-        if not self.hparams.nocyc:
-            self.net_gback = Generator(n_channels=self.hparams.input_nc, out_channels=self.hparams.output_nc, nf=self.hparams.ngf,
-                                   norm_type=self.hparams.norm, final=self.hparams.final, mc=self.hparams.mc, encode='3d', decode='1d')
+        self.encoder = Encoder(**ddconfig)
+        self.decoder = Decoder(**ddconfig)
 
-            _, self.net_dzy = self.set_networks()
-            _, self.net_dzx = self.set_networks()
+        # Initialize other components
+        self.quant_conv = nn.Conv2d(2 * ddconfig["z_channels"], 2 * hparams.embed_dim, 1)
+        self.post_quant_conv = nn.Conv2d(hparams.embed_dim, ddconfig["z_channels"], 1)
+        self.embed_dim = hparams.embed_dim
 
-        # save model names
-        self.netg_names = {'net_g': 'net_g'}
-        self.netd_names = {'net_d': 'net_d'}
+        # Initialize loss
+        self.loss = instantiate_from_config(config['model']['params']["lossconfig"])
+        self.discriminator = self.loss.discriminator
 
-        if not self.hparams.nocyc:
-            self.netg_names['net_gback'] = 'net_gback'
-            self.netd_names['net_dzy'] = 'net_dzy'
-            self.netd_names['net_dzx'] = 'net_dzx'
+        # Save model names
+        self.netg_names = {'encoder': 'encoder', 'decoder': 'decoder',
+                           'quant_conv': 'quant_conv', 'post_quant_conv': 'post_quant_conv',
+                           'net_g': 'net_g'}
+        self.netd_names = {'discriminator': 'discriminator', 'net_d': 'net_d'}
 
-        # Finally, initialize the optimizers and scheduler
+        # Configure optimizers
         self.configure_optimizers()
-        self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize,
-                                                hparams.cropz // hparams.dsp * hparams.uprate), mode='trilinear')
+
+        self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
+        self.uprate = (hparams.cropsize // hparams.cropz)
+        print('uprate: ' + str(self.uprate))
+
+        # lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
+        # if opt.scale_lr:
+        #    model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr  = 2 * 6 * 16 * 4.5e-6
 
         # CUT NCE
         if not self.hparams.nocut:
             netF = PatchSampleF3D(use_mlp=self.hparams.use_mlp, init_type='normal', init_gain=0.02, gpu_ids=[],
-                                nc=self.hparams.c_mlp)
+                                  nc=self.hparams.c_mlp)
             self.netF = init_net(netF, init_type='normal', init_gain=0.02, gpu_ids=[])
-            feature_shapes = [x * self.hparams.ngf for x in [1, 2, 4, 8]]
+            feature_shapes = [64, 128, 128, 256]
             self.netF.create_mlp(feature_shapes)
 
             if self.hparams.fWhich == None:  # which layer of the feature map to be considered in CUT
@@ -58,15 +82,18 @@ class GAN(BaseModel):
             print(self.hparams.fWhich)
 
             self.criterionNCE = []
-            for nce_layer in range(4):  # self.nce_layers:
+            for nce_layer in range(len(feature_shapes)):  # self.nce_layers:
                 self.criterionNCE.append(PatchNCELoss(opt=hparams))  # .to(self.device))
 
             self.netg_names['netF'] = 'netF'
 
     @staticmethod
     def add_model_specific_args(parent_parser):
-        parser = parent_parser.add_argument_group("LitModel")
-        # coefficient for the identify loss
+        parser = parent_parser.add_argument_group("AutoencoderKL")
+        parser.add_argument("--embed_dim", type=int, default=4)
+        parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
+        parser.add_argument("--hbranch", type=str, default='mid')
+        parser.add_argument("--tc", action="store_true", default=False)
         parser.add_argument("--dsp", type=int, default=1)
         parser.add_argument("--lambB", type=int, default=1)
         parser.add_argument("--l1how", type=str, default='dsp')
@@ -87,13 +114,29 @@ class GAN(BaseModel):
         parser.add_argument("--downz", type=int, default=0)
         return parent_parser
 
-    def test_method(self, net_g, img):
-        output = net_g(img[0])
-        #output = combine(output, x[0], method='mul')
-        return output[0]
+    def encode(self, x):
+        h, hbranch, hz = self.encoder(x)
+        moments = self.quant_conv(h)
+        posterior = DiagonalGaussianDistribution(moments)
+        hz = hz[1::2]  # every other two layer  (Z, C, X, Y)
+        hz = [x.permute(1, 2, 3, 0).unsqueeze(0) for x in hz]
+        return posterior, hbranch, hz
+
+    def decode(self, z):
+        z = self.post_quant_conv(z)
+        dec = self.decoder(z)
+        return dec
+
+    def forward(self, input, sample_posterior=True):
+        posterior, hbranch, _ = self.encode(input)
+        if sample_posterior:
+            z = posterior.sample()
+        else:
+            z = posterior.mode()
+        dec = self.decode(z)
+        return dec, posterior, hbranch
 
     def generation(self, batch):
-
         if self.hparams.downz > 0:
             batch['img'][0] = torch.nn.Upsample(scale_factor=(1, 1, 1 / self.hparams.downz), mode='trilinear')(batch['img'][0])
             batch['img'][0] = torch.nn.Upsample(scale_factor=(1, 1, self.hparams.downz), mode='trilinear')(batch['img'][0])
@@ -119,11 +162,16 @@ class GAN(BaseModel):
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
         #self.Yup = self.upsample(self.oriY)  # (B, C, X, Y, Z)
 
-        self.goutz = self.net_g(self.Xup, method='encode')
-        self.XupX = self.net_g(self.goutz, method='decode')['out0']
+        # AE
+        self.reconstructions, self.posterior, hbranch = self.forward(
+            self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])  # (Z, C, X, Y)
 
-        if not self.hparams.nocyc:
-            self.XupXback = self.net_gback(self.XupX)['out0']
+        if self.hparams.hbranch == 'z':
+            hbranch = self.posterior.sample()
+            hbranch = self.decoder.conv_in(hbranch)
+
+        hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
+        self.XupX = self.net_g(hbranch, method='decode')['out0']
 
     def get_xy_plane(self, x):  # (B, C, X, Y, Z)
         return x.permute(4, 1, 2, 3, 0)[::1, :, :, :, 0]  # (Z, C, X, Y, B)
@@ -158,23 +206,6 @@ class GAN(BaseModel):
         loss = loss / 4
         return loss
 
-    def adv_loss_six_way_y(self, x, truth):
-        loss = 0
-        loss += self.add_loss_adv(a=x.permute(2, 1, 4, 3, 0)[:, :, :, :, 0],  # (X, C, Z, Y)
-                                        net_d=self.net_dzy, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(2, 1, 3, 4, 0)[:, :, :, :, 0],  # (X, C, Y, Z)
-                                        net_d=self.net_dzy, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 4, 2, 0)[:, :, :, :, 0],  # (Y, C, Z, X)
-                                        net_d=self.net_dzx, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(3, 1, 2, 4, 0)[:, :, :, :, 0],  # (Y, C, X, Z)
-                                        net_d=self.net_dzx, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 2, 3, 0)[:, :, :, :, 0],  # (Z, C, X, Y)
-                                        net_d=self.net_d, truth=truth)
-        loss += self.add_loss_adv(a=x.permute(4, 1, 3, 2, 0)[:, :, :, :, 0],  # (Z, C, Y, X)
-                                        net_d=self.net_d, truth=truth)
-        loss = loss / 6
-        return loss
-
     def backward_g(self):
         loss_g = 0
         loss_dict = {}
@@ -195,20 +226,23 @@ class GAN(BaseModel):
         loss_dict['l1'] = loss_l1
         loss_g += loss_l1 * self.hparams.lamb
 
-        if not self.hparams.nocyc:
-            gback = self.adv_loss_six_way_y(self.XupXback, truth=True)
-            loss_dict['gback'] = gback
-            loss_g += gback
+        # aeloss
+        oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
+        aeloss, log_dict_ae = self.loss(oriXpermute,
+                                        self.reconstructions, self.posterior, 0, self.global_step,
+                                        last_layer=self.get_last_layer(), split="train")
+        loss_g += aeloss
 
-            loss_l1_back = self.add_loss_l1(a=self.XupXback, b=self.Xup)
-            loss_dict['l1b'] = loss_l1_back
-            loss_g += loss_l1_back * self.hparams.lambB
-
+        # CUT
         if not self.hparams.nocut:
-            # (X, XupX)
-            #self.goutz = self.net_g(self.Xup, method='encode')
-            feat_q = self.goutz
-            feat_k = self.net_g(self.XupX, method='encode')
+            # feat q
+
+            posterior, hbranch, hz = self.encode(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])
+            feat_q = hz
+
+            # feat k
+            posterior, hbranch, hz = self.encode(self.XupX.permute(4, 1, 2, 3, 0)[4::8, :, :, :, 0])  # (Z, C, X, Y)
+            feat_k = hz
 
             feat_k_pool, sample_ids = self.netF(feat_k, self.hparams.num_patches,
                                                 None)  # get source patches by random id
@@ -237,13 +271,14 @@ class GAN(BaseModel):
         loss_dict['dxx_x'] = dxx + dx
         loss_d += dxx + dx
 
-        # ADV dyy
-        if not self.hparams.nocyc:
-            dyy = self.adv_loss_six_way_y(self.XupXback, truth=False)
-            dy = self.adv_loss_six_way_y(self.oriX, truth=True)
 
-            loss_dict['dyy'] = dyy + dy
-            loss_d += dyy + dy
+
+        # aeloss
+        oriXpermute = self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]
+        discloss, log_dict_disc = self.loss(oriXpermute,
+                                            self.reconstructions, self.posterior, 1, self.global_step,
+                                            last_layer=self.get_last_layer(), split="train")
+        loss_d += discloss
 
         loss_dict['sum'] = loss_d
 
@@ -260,6 +295,8 @@ class GAN(BaseModel):
                 x, _ = x.max(dim=-1)
         return x
 
+    def get_last_layer(self):
+        return self.decoder.conv_out.weight
 
 # USAGE
 # python train.py --jsn cyc_imorphics --prj IsoScope0/0 --models IsoScope0 --cropz 16 --cropsize 128 --netG ed023d --env t09 --adv 1 --rotate --ngf 64 --direction xyori --nm 11 --dataset longdent

@@ -32,7 +32,7 @@ class GAN(BaseModel):
 
         self.hparams.final = 'tanh'
         if self.hparams.tc:
-            self.hparams.input_nc = 1  # this would not be used because only the decoder part of net_g us used
+            self.hparams.input_nc = 1  # this would not be used
             self.hparams.output_nc = 2
         self.net_g, self.net_d = self.set_networks()
 
@@ -58,8 +58,6 @@ class GAN(BaseModel):
         self.configure_optimizers()
 
         self.upsample = torch.nn.Upsample(size=(hparams.cropsize, hparams.cropsize, hparams.cropsize), mode='trilinear')
-        self.uprate = (hparams.cropsize // hparams.cropz) * hparams.dsp
-        print('uprate: ' + str(self.uprate))
 
         #lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         #if opt.scale_lr:
@@ -89,11 +87,11 @@ class GAN(BaseModel):
         parser = parent_parser.add_argument_group("AutoencoderKL")
         parser.add_argument("--embed_dim", type=int, default=4)
         parser.add_argument("--ldmyaml", type=str, default='ldmaex2')
+        parser.add_argument("--l1how", type=str, default='dsp')
+        parser.add_argument("--uprate", type=int, default=4)
         parser.add_argument("--skipl1", type=int, default=4)
         parser.add_argument("--hbranch", type=str, default='mid')
         parser.add_argument("--tc", action="store_true", default=False)
-        parser.add_argument("--l1how", type=str, default='dsp')
-        parser.add_argument("--dsp", type=int, default=1, help='extra downsample rate')
         #parswr.add_argument("--ddconfig", type=str)
         parser.add_argument("--nocut", action='store_true')
         parser.add_argument('--num_patches', type=int, default=256, help='number of patches per layer')
@@ -105,15 +103,13 @@ class GAN(BaseModel):
         parser.add_argument('--use_mlp', action='store_true')
         parser.add_argument("--c_mlp", dest='c_mlp', type=int, default=256, help='channel of mlp')
         parser.add_argument('--fWhich', nargs='+', help='which layers to have NCE loss', type=int, default=None)
-        parser.add_argument("--downbranch", type=int, default=1)
-        parser.add_argument("--resizebranch", type=int, default=1)
         return parent_parser
 
     def encode(self, x):
         h, hbranch, hz = self.encoder(x)
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
-        hz = hz[1::2]  # every other two layer  (Z, C, X, Y)  # WHY?????
+        hz = hz[1::2]  # every other two layer  (Z, C, X, Y)
         hz = [x.permute(1, 2, 3, 0).unsqueeze(0) for x in hz]
         return posterior, hbranch, hz
 
@@ -161,14 +157,9 @@ class GAN(BaseModel):
     def generation(self, batch):
         if self.hparams.cropz > 0:
             z_init = np.random.randint(batch['img'][0].shape[4] - self.hparams.cropz)
-            for b in range(len(batch['img'])):
-                batch['img'][b] = batch['img'][b][:, :, :, :, z_init:z_init + self.hparams.cropz]
-
-        # extra downsample
-        if self.hparams.dsp > 1:
-            z_init = np.random.randint(self.hparams.dsp)
-            for b in range(len(batch['img'])):
-                batch['img'][b] = batch['img'][b][:, :, :, :, z_init::self.hparams.dsp]
+            batch['img'][0] = batch['img'][0][:, :, :, :, z_init:z_init + self.hparams.cropz]
+            if self.hparams.tc:
+                batch['img'][1] = batch['img'][1][:, :, :, :, z_init:z_init + self.hparams.cropz]
 
         if self.hparams.tc:
             self.oriX = torch.cat((batch['img'][0], batch['img'][1]), 1)
@@ -179,26 +170,11 @@ class GAN(BaseModel):
         # AE
         self.reconstructions, self.posterior, hbranch = self.forward(self.oriX.permute(4, 1, 2, 3, 0)[:, :, :, :, 0])  # (Z, C, X, Y)
 
-        # hbranch downsample z:
-        #print(hbranch.shape)  # (16, 256, 16, 16)
-
         if self.hparams.hbranch == 'z':
-            hbranch = self.posterior.sample()  # (16, 4, 16, 16)
-
-            if self.hparams.downbranch > 1:
-                hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
-                hbranch = nn.MaxPool3d((1, 1, self.hparams.downbranch))(hbranch)  # extra downsample, (1, C, X, Y, Z/2)
-                hbranch = hbranch.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
-
-            if self.hparams.resizebranch != 1:
-                hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
-                hbranch = nn.Upsample(scale_factor=(1, 1, self.hparams.resizebranch), mode='trilinear')(hbranch)  # extra downsample, (1, C, X, Y, Z/2)
-                hbranch = hbranch.permute(4, 1, 2, 3, 0)[:, :, :, :, 0]  # (Z, C, X, Y)
-
-            hbranch = self.decoder.conv_in(hbranch)  # (16, 256, 16, 16)
+            hbranch = self.posterior.sample()
+            hbranch = self.decoder.conv_in(hbranch)
 
         hbranch = hbranch.permute(1, 2, 3, 0).unsqueeze(0)  # (1, C, X, Y, Z)
-
         self.XupX = self.net_g(hbranch, method='decode')['out0']
 
         self.Xup = self.upsample(self.oriX)  # (B, C, X, Y, Z)
@@ -206,26 +182,26 @@ class GAN(BaseModel):
         if not self.hparams.nocut:
             self.goutz = hbranch
 
-    def get_projection(self, x, depth, how='mean'):
-        if how == 'dsp':
-            x = x[:, :, :, :, (self.uprate // 2)::self.uprate * self.hparams.skipl1]
-        else:
-            x = x.unfold(-1, depth, depth)
-            if how == 'mean':
-                x = x.mean(dim=-1)
-            elif how == 'max':
-                x, _ = x.max(dim=-1)
-        return x
-
     def backward_g(self):
         loss_g = 0
         loss_dict = {}
 
         axx = self.adv_loss_six_way(self.XupX, net_d=self.net_d, truth=True)
 
-        loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=self.uprate
-                                                                          * self.hparams.skipl1, how=self.hparams.l1how),
+        if self.hparams.l1how == 'mix':
+            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=self.hparams.uprate
+                                                                          * self.hparams.skipl1,
+                                                         how='dsp'),
                                    b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
+            loss_l1 += self.add_loss_l1(a=self.get_projection(self.XupX, depth=self.hparams.uprate
+                                                                          * self.hparams.skipl1,
+                                                         how='max'),
+                                   b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
+        else:
+            loss_l1 = self.add_loss_l1(a=self.get_projection(self.XupX, depth=self.hparams.uprate
+                                                                              * self.hparams.skipl1,
+                                                             how=self.hparams.l1how),
+                                       b=self.oriX[:, :, :, :, ::self.hparams.skipl1])
 
         loss_dict['axx'] = axx
         loss_g += axx
@@ -292,6 +268,17 @@ class GAN(BaseModel):
 
         loss_dict['sum'] = loss_d
         return loss_dict
+
+    def get_projection(self, x, depth, how='mean'):
+        if how == 'dsp':
+            x = x[:, :, :, :, (self.hparams.uprate // 2)::self.hparams.uprate * self.hparams.skipl1]
+        else:
+            x = x.unfold(-1, depth, depth)
+            if how == 'mean':
+                x = x.mean(dim=-1)
+            elif how == 'max':
+                x, _ = x.max(dim=-1)
+        return x
 
     def get_last_layer(self):
         return self.decoder.conv_out.weight

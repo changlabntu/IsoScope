@@ -1,3 +1,0 @@
-# Paths
-export LOGS='/media/ExtHDD01/logs/'
-export DATASET='/media/ExtHDD01/Dataset/paired_images/'

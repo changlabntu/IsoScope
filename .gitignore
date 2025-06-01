@@ -23,6 +23,7 @@ dataset/
 forpaper/
 postprocessing/
 logs/
+notinuse/
 
 outputs/results/
 outputs/wnwp3d/
